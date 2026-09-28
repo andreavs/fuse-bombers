@@ -112,7 +112,7 @@ export class RoundScene extends Phaser.Scene {
   private rocketKeys: string[] = [];
   private shownRockets = 0;
   private gateLabels: Pool<Phaser.GameObjects.Text> = new Map();
-  private crates: Pool<Phaser.GameObjects.Image> = new Map();
+  private crates: Pool<Phaser.GameObjects.Container> = new Map();
 
   constructor() {
     super(RoundScene.KEY);
@@ -171,13 +171,11 @@ export class RoundScene extends Phaser.Scene {
     sync(
       this.crates,
       view.crates,
-      () => this.add.image(0, 0, "crate").setDepth(DEPTH.crates),
-      (box, c) => {
-        box
+      (c) => this.createCrate(c.card),
+      (crate, c) => {
+        crate
           .setPosition(c.x, c.y)
-          .setScale(
-            (46 / box.width) * Math.min(1, (view.tick - c.spawnTick) / 15),
-          );
+          .setScale(Math.min(1, (view.tick - c.spawnTick) / 15));
       },
     );
     for (const c of view.castles) this.drawCastle(view, c);
@@ -207,6 +205,13 @@ export class RoundScene extends Phaser.Scene {
       strokeThickness: Math.round(size / 4),
     };
     return this.add.text(x, y, value, style).setOrigin(0.5).setDepth(depth);
+  }
+
+  /** A wooden crate with its card's badge pinned on it. */
+  private createCrate(card: string): Phaser.GameObjects.Container {
+    const box = this.add.image(0, 0, "crate").setDisplaySize(46, 46);
+    const icon = this.add.image(0, 0, `card-${card}`).setScale(0.85);
+    return this.add.container(0, 0, [box, icon]).setDepth(DEPTH.crates);
   }
 
   private startRound(view: RoundView): void {
