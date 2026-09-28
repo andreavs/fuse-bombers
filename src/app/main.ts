@@ -29,3 +29,12 @@ async function boot(): Promise<void> {
 boot().catch((error: unknown) => {
   console.error("Fuse Bombers failed to start", error);
 });
+
+// Developer aid until the lobby exists: a readout of the one-button input layer.
+if (new URLSearchParams(window.location.search).has("inputdebug")) {
+  import("./input/debug.js")
+    .then(({ startInputDebug }) => startInputDebug())
+    .catch((error: unknown) => {
+      console.error("Input debug overlay failed to start", error);
+    });
+}
