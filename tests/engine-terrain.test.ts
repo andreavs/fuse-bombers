@@ -108,13 +108,16 @@ test("crater carving lowers the surface but never below bedrock", () => {
   assert.ok(surfaceAt(terrain, -5) > ARENA_HEIGHT, "outside is a pit");
 });
 
-/** Runs of 1–2 columns standing more than 3 px above both neighbours, as `x:width:height`. */
+/**
+ * Runs of 1–2 columns standing more than 3 px above both neighbours, as `x:width:height`.
+ * Neighbours beyond the arena edge count as bedrock.
+ */
 function needles(t: Terrain): string[] {
   const s = t.surface;
   const found: string[] = [];
-  for (let x = 1; x < s.length - 1; x++) {
-    for (let w = 1; w <= 2 && x + w < s.length; w++) {
-      const level = Math.min(s[x - 1] ?? 0, s[x + w] ?? 0);
+  for (let x = 0; x < s.length; x++) {
+    for (let w = 1; w <= 2 && x + w <= s.length; w++) {
+      const level = Math.min(s[x - 1] ?? t.bedrock, s[x + w] ?? t.bedrock);
       const run = Array.from(s.subarray(x, x + w));
       if (Math.max(...run) < level - 3)
         found.push(`${x}:${w}:${Math.round(level - Math.min(...run))}`);
@@ -166,6 +169,30 @@ test("a column squeezed between two craters is levelled", () => {
   carveCrater(t, 441, 760, 10); // spans columns 431..450; column 430 is in neither
   assert.deepEqual(needles(t), []);
   assert.ok((t.surface[430] ?? 0) > 760, `column 430 at ${t.surface[430]}`);
+});
+
+test("a crater at the arena edge leaves no sliver against either edge", () => {
+  const w = ARENA_WIDTH;
+  for (const off of [10.5, 11.5]) {
+    const left = flatTerrain(600);
+    carveCrater(left, off, 650, 10);
+    assert.deepEqual(needles(left), [], `left edge, crater at ${off}`);
+    assert.ok((left.surface[0] ?? 0) > 640, `column 0 at ${left.surface[0]}`);
+
+    const right = flatTerrain(600);
+    carveCrater(right, w - off, 650, 10);
+    assert.deepEqual(needles(right), [], `right edge, crater at ${w - off}`);
+    assert.ok(
+      (right.surface[w - 1] ?? 0) > 640,
+      `column ${w - 1} at ${right.surface[w - 1]}`,
+    );
+  }
+  // Level ground at the edge is not a needle and is left alone by a nearby crater.
+  const t = flatTerrain(600);
+  carveCrater(t, 30, 650, 10);
+  assert.equal(t.surface[0], 600);
+  assert.equal(t.surface[1], 600);
+  assert.deepEqual(needles(t), []);
 });
 
 test("arcs are mirrored for left-facing castles and launch follows the angle", () => {

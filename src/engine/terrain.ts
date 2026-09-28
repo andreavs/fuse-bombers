@@ -175,11 +175,13 @@ export function carveCrater(
   }
   if (x0 < 0) return null;
   // Level needles in and just beside the crater (a column between two craters can survive both).
+  // Off-arena neighbours count as bedrock (the arena edge is a pit, as in surfaceAt), so a sliver
+  // left against the edge is levelled with its in-arena neighbour.
   const s = t.surface;
-  const from = Math.max(1, x0 - NEEDLE_WIDTH);
-  const to = Math.min(t.width - 2, x1 + 1);
+  const from = Math.max(0, x0 - NEEDLE_WIDTH);
+  const to = Math.min(t.width - 1, x1 + 1);
   for (let x = from; x <= to; x++) {
-    for (let w = 1; w <= NEEDLE_WIDTH && x + w < t.width; w++) {
+    for (let w = 1; w <= NEEDLE_WIDTH && x + w <= t.width; w++) {
       const level = Math.min(s[x - 1] ?? t.bedrock, s[x + w] ?? t.bedrock);
       let lowest = -Infinity;
       for (let k = x; k < x + w; k++) lowest = Math.max(lowest, s[k] ?? 0);
