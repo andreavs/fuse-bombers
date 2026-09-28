@@ -40,7 +40,7 @@ pnpm format         # prettier --write . ; CI runs format:check
 
 Conventions: TypeScript strict with `noUncheckedIndexedAccess`; relative imports use the `.js` extension
 (`import { x } from "./world.js"`); reference files in `public/` through `import.meta.env.BASE_URL` so they work under
-the `/fuse-bombers/` Pages base. Open the game with `?mute` when testing so you do not blast audio (once audio exists).
+the `/fuse-bombers/` Pages base. Open the game with `?mute` when testing so you do not blast audio.
 
 ## Pull requests
 

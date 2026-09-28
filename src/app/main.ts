@@ -5,17 +5,21 @@ import Phaser from "phaser";
 import { ARENA_HEIGHT, ARENA_WIDTH } from "../engine/index.js";
 import { css, playerColor } from "../render/palette.js";
 import { RoundScene, type RoundSceneData } from "../render/round-scene.js";
+import { createAudio } from "./audio/index.js";
 import { createPlaceholderBot } from "./bot.js";
 import { createBrowserInput } from "./input/index.js";
 import { RoundRunner, type PressSource } from "./round-runner.js";
 
 const PLAYERS = 4;
 const params = new URLSearchParams(window.location.search);
+/** Music and effects; `?mute` disables them for this load. */
+const audio = createAudio();
+audio.mountToggle();
 
 /**
  * Until the lobby exists the page is an attract mode: four bots play round after round. `?play` hands player 1 to
  * the first button pressed (a key, a gamepad or a touch zone); `?seed=N` fixes the match;
- * `?debug` exposes `window.fuseBombers = { game, runner }` for browser tests.
+ * `?debug` exposes `window.fuseBombers = { game, runner, audio }` for browser tests.
  */
 function startRunner(): RoundRunner {
   const play = params.has("play");
@@ -55,14 +59,20 @@ async function boot(): Promise<void> {
     height: ARENA_HEIGHT,
     backgroundColor: "#0b1020",
     banner: false,
+    audio: { noAudio: true }, // Sound is ./audio's, not Phaser's.
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
   });
   game.scene.add(RoundScene.KEY, RoundScene, true, data);
+  // Scenes get their event emitter when the game boots.
+  game.events.once(Phaser.Core.Events.READY, () => {
+    const scene = game.scene.getScene(RoundScene.KEY);
+    if (scene) audio.attachRound(scene);
+  });
   if (params.has("debug"))
-    Object.assign(window, { fuseBombers: { game, runner } });
+    Object.assign(window, { fuseBombers: { game, runner, audio } });
 }
 
 boot().catch((error: unknown) => {
