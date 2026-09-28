@@ -25,7 +25,12 @@ export interface RoundRunnerOptions {
   /** One entry per player: its bot, or null for a human whose presses come from `input`. */
   controllers: readonly (Bot | null)[];
   input?: PressSource;
-  /** Seconds the aftermath of a finished round plays before the next round starts (default 4). */
+  /** Round wins needed to take the match (default 3). */
+  winsToWin?: number;
+  /**
+   * Seconds the aftermath of a finished round plays before the next round starts (default 4). `Infinity` holds
+   * the finished round until `nextRound()` is called, for a match flow with its own results screen.
+   */
   aftermath?: number;
   tuning?: Partial<Tuning>;
 }
@@ -36,8 +41,8 @@ const MAX_STEPS_PER_FRAME = 6;
 
 /**
  * The app's game loop: advances the engine at a fixed 60 Hz from real frame times, asks bots and the input hub
- * for presses every step, and starts the next round of the match (then a new match) once a round has ended.
- * It implements the render layer's `RoundSource`.
+ * for presses every step, records each finished round in `match` as soon as it ends, and starts the next round
+ * (then a new match) once the aftermath has played. It implements the render layer's `RoundSource`.
  */
 export class RoundRunner {
   match: MatchState;
@@ -81,19 +86,24 @@ export class RoundRunner {
     const pressed = controllers.map((bot, id) =>
       bot ? bot(round, id) : humans[id] === true,
     );
-    return step(this.state, pressed);
+    const events = step(this.state, pressed);
+    for (const event of events)
+      if (event.type === "round-over")
+        recordRoundResult(this.match, event.result);
+    return events;
   }
 
-  private nextRound(): void {
-    const result = this.state.result;
-    if (result && recordRoundResult(this.match, result) !== null)
+  /** Starts the next round of the match, or of a new match once this one has a winner. */
+  nextRound(): void {
+    if (this.match.winner !== null)
       this.match = this.newMatch(this.match.config.seed + 1);
     this.state = createRound(nextRoundConfig(this.match));
     this.ticksOver = 0;
   }
 
   private newMatch(seed: number): MatchState {
-    const { controllers, tuning } = this.options;
-    return createMatch({ seed, playerCount: controllers.length, tuning });
+    const { controllers, tuning, winsToWin } = this.options;
+    const playerCount = controllers.length;
+    return createMatch({ seed, playerCount, tuning, winsToWin });
   }
 }

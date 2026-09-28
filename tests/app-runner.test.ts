@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPlaceholderBot, type Bot } from "../src/app/bot.js";
+import { createBotPlayer, type Bot } from "../src/app/bot.js";
 import { RoundRunner } from "../src/app/round-runner.js";
 
 const STEP_MS = 1000 / 60;
@@ -41,20 +41,46 @@ test("the runner asks bots per step and takes human presses from the input sourc
   assert.deepEqual(fired, [1, 0]);
 });
 
-test("both placeholder bots fire, and a finished round is followed by the next one", () => {
+test("real bots fire, the result is recorded as the round ends, and the next round follows", () => {
   const runner = new RoundRunner({
     seed: 3,
-    controllers: [createPlaceholderBot(() => 0.5), createPlaceholderBot()],
+    controllers: [createBotPlayer("hard", 0, 1), createBotPlayer("easy", 1, 2)],
     tuning: { castleHp: [0, 0, 12, 12, 12, 12, 12], fuseTime: 20 },
     aftermath: 0.5,
   });
   const first = runner.view;
   const fired = new Set<number>();
+  let recordedAtEnd = false;
   for (let i = 0; i < 60 * 200 && runner.view === first; i++)
-    for (const event of runner.advance(STEP_MS))
+    for (const event of runner.advance(STEP_MS)) {
       if (event.type === "fired") fired.add(event.castleId);
+      if (event.type === "round-over")
+        recordedAtEnd = runner.match.history.length === 1;
+    }
   assert.deepEqual([...fired].sort(), [0, 1], "both bots fired");
+  assert.ok(recordedAtEnd, "the match saw the result as the round ended");
   assert.notEqual(runner.view, first, "a new round started");
   assert.equal(runner.view.tick, 1);
   assert.equal(runner.match.history.length, 1);
+});
+
+test("with an infinite aftermath the runner holds a finished round until nextRound()", () => {
+  const runner = new RoundRunner({
+    seed: 4,
+    controllers: [createBotPlayer("hard", 0, 1), createBotPlayer("hard", 1, 2)],
+    tuning: { castleHp: [0, 0, 8, 8, 8, 8, 8], fuseTime: 10 },
+    aftermath: Infinity,
+    winsToWin: 1,
+  });
+  const first = runner.view;
+  for (let i = 0; i < 60 * 300 && !first.result; i++) runner.advance(STEP_MS);
+  for (let i = 0; i < 600; i++) runner.advance(STEP_MS);
+  assert.ok(first.result, "the round ended");
+  assert.equal(runner.view, first, "still the finished round");
+  const winner = first.result.winner;
+  assert.equal(runner.match.winner, winner);
+  runner.nextRound();
+  assert.notEqual(runner.view, first);
+  if (winner !== null)
+    assert.equal(runner.match.history.length, 0, "a decided match restarts");
 });
