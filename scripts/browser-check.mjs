@@ -1,4 +1,4 @@
-// Loads the running dev server in Chromium, screenshots bots-only rounds (one per round, so every theme shows up),
+// Loads the running dev server in Chromium, screenshots bots-only rounds (one per round; the theme follows the seed),
 // collects console errors and measures the frame rate and the scene's own update time (engine steps + drawing).
 // Usage, with `pnpm dev` running (`pnpm exec playwright install chromium` once):
 //   node scripts/browser-check.mjs [url] [out-dir] [seconds]
@@ -70,7 +70,7 @@ let rounds = 0;
 for (let s = 1; s <= total; s++) {
   const now = await sample();
   console.log(`t=${s}s ${JSON.stringify(now)}`);
-  // One screenshot a few seconds into each round (crates are out by then); themes alternate by seed.
+  // One screenshot a few seconds into each round (crates are out by then); the theme follows the round seed.
   if (now.seed !== seed && now.tick >= 300) {
     seed = now.seed;
     await page.screenshot({ path: `${out}/round${++rounds}.png` });
