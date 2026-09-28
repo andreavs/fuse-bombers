@@ -25,6 +25,15 @@ export {
   step,
   view,
 } from "./round.js";
+export { predictTrajectory } from "./predict.js";
+export type {
+  ImpactKind,
+  PredictOptions,
+  Trajectory,
+  TrajectoryImpact,
+} from "./predict.js";
+export { createMatch, nextRoundConfig, recordRoundResult } from "./match.js";
+export type { MatchConfig, MatchState } from "./match.js";
 export {
   castleCenter,
   gatePositionAt,
