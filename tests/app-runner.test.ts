@@ -84,3 +84,49 @@ test("with an infinite aftermath the runner holds a finished round until nextRou
   if (winner !== null)
     assert.equal(runner.match.history.length, 0, "a decided match restarts");
 });
+
+test("a NaN, infinite or negative frame time counts as no time and does not freeze the loop", () => {
+  const runner = new RoundRunner({ seed: 4, controllers: [idle, idle] });
+  runner.advance(STEP_MS * 1.5);
+  assert.equal(runner.view.tick, 1);
+  for (const bad of [NaN, Infinity, -Infinity, -STEP_MS * 3]) {
+    runner.advance(bad);
+    assert.equal(runner.view.tick, 1, `${bad} advances nothing`);
+  }
+  runner.advance(STEP_MS * 0.6); // the half step carried from before still counts
+  assert.equal(runner.view.tick, 2);
+  runner.advance(STEP_MS);
+  assert.equal(runner.view.tick, 3);
+});
+
+test("one advance never spans two rounds: the next round starts on the following frame", () => {
+  let frame: number[] = [];
+  const watcher: Bot = (view) => {
+    frame.push(view.tick);
+    return false;
+  };
+  const runner = new RoundRunner({
+    seed: 5,
+    controllers: [watcher, createBotPlayer("hard", 1, 1)],
+    tuning: { castleHp: [0, 0, 12, 12, 12, 12, 12], fuseTime: 20 },
+    aftermath: 0.5,
+  });
+  let current = runner.view;
+  let restarts = 0;
+  for (let i = 0; i < 60 * 40 && restarts < 2; i++) {
+    frame = [];
+    const events = runner.advance(STEP_MS * 6); // the most steps one frame runs
+    const ticks = frame;
+    for (let k = 1; k < ticks.length; k++)
+      assert.ok(ticks[k]! > ticks[k - 1]!, `frame ${i} spans a restart`);
+    for (const event of events)
+      assert.ok(ticks.includes(event.tick), `${event.type} is from this frame`);
+    if (runner.view === current) continue;
+    restarts++;
+    current = runner.view;
+    // Every step of this frame ran in the new round, so its events are new-round events.
+    assert.equal(ticks[0], 0);
+    assert.equal(runner.view.tick, ticks.length);
+  }
+  assert.equal(restarts, 2, "rounds finished and restarted");
+});

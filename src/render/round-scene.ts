@@ -36,6 +36,7 @@ export interface PlayerLook {
  */
 export interface RoundSource {
   readonly view: RoundView;
+  /** Advances by real time; the returned events all belong to the round `view` shows afterwards. */
   advance(deltaMs: number): readonly TickEvent[];
 }
 
@@ -45,8 +46,17 @@ export interface RoundSceneData {
   readonly players?: readonly PlayerLook[];
 }
 
-/** Scene event emitted every frame after the engine advanced, with `(events, view)`. Effects and audio listen here. */
+/**
+ * Scene event emitted every frame after the engine advanced, with `(events, view)`. Effects and audio listen here.
+ * The events always belong to the round `view` shows (see `RoundSource.advance`).
+ */
 export const ROUND_EVENTS = "round-events";
+
+/**
+ * Scene event emitted with `(view)` when a round starts (the first one too), before that frame's `ROUND_EVENTS`.
+ * Listeners drop effects left over from the previous round here.
+ */
+export const ROUND_START = "round-start";
 
 /** Draw order. Effects slot in between, e.g. explosions at `DEPTH.rockets + 1`. */
 export const DEPTH = {
@@ -116,7 +126,7 @@ export class RoundScene extends Phaser.Scene {
   private rocketKeys: string[] = [];
   private shownRockets = 0;
   private gateLabels: Pool<Phaser.GameObjects.Text> = new Map();
-  private crates: Pool<Phaser.GameObjects.Image> = new Map();
+  private crates: Pool<Phaser.GameObjects.Container> = new Map();
 
   constructor() {
     super(RoundScene.KEY);
@@ -172,26 +182,26 @@ export class RoundScene extends Phaser.Scene {
     // Raw frame time: Phaser's smoothed delta is clamped to 1/60 s while the window is unfocused.
     const events = this.source.advance(this.game.loop.rawDelta);
     const view = this.source.view;
-    if (view !== this.current) this.startRound(view);
+    const started = view !== this.current;
+    if (started) this.startRound(view);
     this.terrain.update(view.terrain);
     this.hud.clear();
     this.drawGates(view);
     sync(
       this.crates,
       view.crates,
-      () => this.add.image(0, 0, "crate").setDepth(DEPTH.crates),
-      (box, c) => {
-        box
+      (c) => this.createCrate(c.card),
+      (crate, c) => {
+        crate
           .setPosition(c.x, c.y)
-          .setScale(
-            (46 / box.width) * Math.min(1, (view.tick - c.spawnTick) / 15),
-          );
+          .setScale(Math.min(1, (view.tick - c.spawnTick) / 15));
       },
     );
     for (const c of view.castles) this.drawCastle(view, c);
     this.drawRockets(view);
     this.drawFuse(view, time);
     this.drawBanner(view);
+    if (started) this.events.emit(ROUND_START, view);
     this.events.emit(ROUND_EVENTS, events, view);
   }
 
@@ -215,6 +225,13 @@ export class RoundScene extends Phaser.Scene {
       strokeThickness: Math.round(size / 4),
     };
     return this.add.text(x, y, value, style).setOrigin(0.5).setDepth(depth);
+  }
+
+  /** A wooden crate with its card's badge pinned on it. */
+  private createCrate(card: string): Phaser.GameObjects.Container {
+    const box = this.add.image(0, 0, "crate").setDisplaySize(46, 46);
+    const icon = this.add.image(0, 0, `card-${card}`).setScale(0.85);
+    return this.add.container(0, 0, [box, icon]).setDepth(DEPTH.crates);
   }
 
   private startRound(view: RoundView): void {

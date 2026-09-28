@@ -49,7 +49,7 @@ async function boot(): Promise<void> {
     },
   });
   if (params.has("debug"))
-    Object.assign(window, { fuseBombers: { game, flow } });
+    Object.assign(window, { fuseBombers: { game, flow, runner: flow } }); // `runner.view` for browser-check.mjs
 }
 
 boot().catch((error: unknown) => {
