@@ -30,10 +30,7 @@ export class WebAudioBackend implements AudioBackend {
   unlock(): void {
     try {
       if (!this.context) this.build(new AudioContext());
-      if (this.context?.state === "suspended")
-        this.context.resume().catch(() => {
-          // Not a gesture the browser accepts; the next one tries again.
-        });
+      this.resume(); // also iOS's "interrupted" after a call or a lock
     } catch {
       // No Web Audio here: music can still play through its media element.
     }
@@ -49,15 +46,28 @@ export class WebAudioBackend implements AudioBackend {
         context.currentTime,
         0.02,
       );
-    if (!muted) return;
-    clearInterval(this.fadeTimer);
-    this.fadeTimer = undefined;
-    for (const element of this.elements.values()) element.pause();
+    if (muted) this.pauseMusic();
+  }
+
+  suspend(): void {
+    this.pauseMusic();
+    this.context?.suspend().catch(() => {
+      // Already closed: nothing is sounding.
+    });
+  }
+
+  resume(): void {
+    const state = this.context?.state;
+    if (state && state !== "running" && state !== "closed")
+      this.context!.resume().catch(() => {
+        // Not a gesture the browser accepts; the next one tries again.
+      });
   }
 
   music(kind: MusicKind | null): void {
     const next = kind ? this.element(kind) : null;
-    if (next && next !== this.current) {
+    // A track still fading out fades back in from where it is, without a restart.
+    if (next && next !== this.current && next.paused) {
       next.currentTime = 0;
       next.volume = 0;
     }
@@ -241,6 +251,12 @@ export class WebAudioBackend implements AudioBackend {
       this.elements.set(kind, element);
     }
     return element;
+  }
+
+  private pauseMusic(): void {
+    clearInterval(this.fadeTimer);
+    this.fadeTimer = undefined;
+    for (const element of this.elements.values()) element.pause();
   }
 
   private start(element: HTMLAudioElement): void {

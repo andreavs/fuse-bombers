@@ -25,6 +25,10 @@ export interface AudioBackend {
   /** Fuse hiss, 0 = silent. */
   sizzle(level: number): void;
   setMuted(muted: boolean): void;
+  /** The tab was hidden: pause the music and stop every sound (the fuse hiss would hold its level). */
+  suspend(): void;
+  /** Undoes `suspend`; the director follows with `music` to restart the wanted track. */
+  resume(): void;
 }
 
 /** localStorage that may be missing or throw (private mode, blocked site data). */
@@ -49,6 +53,8 @@ const PENDING_SECONDS = 0.15;
 export class AudioDirector {
   readonly disabled: boolean;
   private mutedNow: boolean;
+  private hidden = false;
+  private unlocked = false;
   private wanted: MusicKind | null = null;
   private sizzleLevel = 0;
   private readonly limiter = new CueLimiter();
@@ -79,7 +85,7 @@ export class AudioDirector {
     }
     this.backend.setMuted(muted);
     if (muted) this.pending.clear();
-    else this.backend.music(this.wanted);
+    else if (!this.hidden) this.backend.music(this.wanted);
     for (const listener of this.listeners) listener();
   }
 
@@ -90,13 +96,28 @@ export class AudioDirector {
   }
 
   unlock(): void {
-    if (!this.disabled) this.backend.unlock();
+    if (this.disabled || this.hidden) return;
+    this.unlocked = true;
+    this.backend.unlock();
+  }
+
+  /** Follows the tab's visibility: silent while hidden, back on show unless muted. */
+  setHidden(hidden: boolean): void {
+    if (this.disabled || hidden === this.hidden) return;
+    this.hidden = hidden;
+    this.pending.clear();
+    if (hidden) this.backend.suspend();
+    else if (!this.mutedNow) {
+      if (this.unlocked) this.backend.resume();
+      this.backend.music(this.wanted); // before a gesture, as at load: `play` may wait for one
+    }
   }
 
   music(kind: MusicKind | null): void {
     if (kind === this.wanted) return;
     this.wanted = kind;
-    if (!this.disabled && !this.mutedNow) this.backend.music(kind);
+    if (!this.disabled && !this.mutedNow && !this.hidden)
+      this.backend.music(kind);
   }
 
   get currentMusic(): MusicKind | null {
@@ -114,7 +135,7 @@ export class AudioDirector {
     if (events.some((event) => event.type === "sudden-death-started"))
       this.music("sudden-death");
     this.setSizzle(sizzleFor(view));
-    if (this.disabled || this.mutedNow) return;
+    if (this.disabled || this.mutedNow || this.hidden) return;
     const now = this.backend.now();
     for (const cue of planCues(events)) {
       const held = this.pending.get(cue.kind)?.cue;

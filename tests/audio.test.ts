@@ -41,6 +41,8 @@ class FakeBackend implements AudioBackend {
   setMuted(muted: boolean): void {
     this.calls.push(`muted:${muted}`);
   }
+  suspend = (): number => this.calls.push("suspend");
+  resume = (): number => this.calls.push("resume");
 }
 
 function fakeStorage(initial: Record<string, string> = {}) {
@@ -185,6 +187,7 @@ test("?mute disables all audio and never touches storage", () => {
   const director = new AudioDirector(backend, store.storage, true);
   assert.equal(director.muted, true);
   director.unlock();
+  director.setHidden(true);
   director.music("round");
   director.roundStarted();
   director.roundEvents(
@@ -232,4 +235,26 @@ test("rounds drive the round, sudden-death and fuse sizzle", () => {
     "sizzle:0.00",
   ]);
   assert.equal(backend.played[0]?.kind, "alarm");
+});
+
+test("a hidden tab goes silent and comes back with the wanted music unless muted", () => {
+  const backend = new FakeBackend();
+  const director = new AudioDirector(backend, undefined);
+  director.music("lobby");
+  director.setHidden(true);
+  director.setHidden(false); // no gesture yet: only music, whose `play` waits for one
+  director.unlock();
+  director.setHidden(true);
+  director.music("round"); // remembered while hidden
+  director.roundEvents([crater(46)], roundView());
+  assert.equal(backend.played.length, 0);
+  director.setHidden(false);
+  director.setMuted(true);
+  director.setHidden(true);
+  director.setHidden(false);
+  const calls = backend.calls.filter((call) => !call.startsWith("sizzle"));
+  assert.equal(
+    calls.join(" "),
+    "music:lobby suspend music:lobby unlock suspend resume music:round muted:true suspend",
+  );
 });

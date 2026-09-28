@@ -64,6 +64,9 @@ export function createAudio(
     const unlock = (): void => director.unlock();
     for (const type of GESTURES)
       window.addEventListener(type, unlock, { capture: true, passive: true });
+    const onVisibility = (): void => director.setHidden(document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
   }
 
   return {
