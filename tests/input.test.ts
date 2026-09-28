@@ -85,6 +85,24 @@ test("the hub reports every device press to listeners, for lobby joining", () =>
   assert.deepEqual(seen, ["touch:1", "key:M"]);
 });
 
+test("a throwing press listener does not stop the others (#12)", () => {
+  const errors: unknown[] = [];
+  const hub = new InputHub((error) => errors.push(error));
+  const seen: DeviceId[] = [];
+  const boom = new Error("boom");
+  hub.onPress(() => {
+    throw boom;
+  });
+  hub.onPress((device) => seen.push(device));
+  hub.bind(0, "key:Q");
+  const target = new FakeTarget();
+  attachKeyboard(target as KeyboardTarget, (d) => hub.press(d));
+  assert.doesNotThrow(() => target.dispatch("keydown", keyEvent("KeyQ")));
+  assert.deepEqual(seen, ["key:Q"]);
+  assert.deepEqual(errors, [boom]);
+  assert.deepEqual(hub.takePresses(1), [true], "the press is still latched");
+});
+
 test("binding drops the joining press and moves a device between slots", () => {
   const hub = new InputHub();
   hub.onPress((device) => {
@@ -180,6 +198,61 @@ test("keyboard: aliased keys are one button, and blur forgets held keys", () => 
     "key:NUM0",
     "key:NUM0",
   ]);
+});
+
+test("keyboard: a lost keyup does not block the button forever (#12)", () => {
+  const target = new FakeTarget();
+  const { presses, press } = recorder();
+  const source = attachKeyboard(target as KeyboardTarget, press);
+  // macOS drops the keyup of a key released while Cmd is held.
+  target.dispatch("keydown", keyEvent("KeyQ"));
+  target.dispatch("keydown", keyEvent("MetaLeft", { metaKey: true }));
+  target.dispatch("keyup", keyEvent("MetaLeft"));
+  target.dispatch("keydown", keyEvent("KeyQ"));
+  // Switching tabs while holding a key loses its keyup too.
+  target.dispatch("keydown", keyEvent("KeyP"));
+  target.dispatch("visibilitychange");
+  target.dispatch("keydown", keyEvent("KeyP"));
+  // A Ctrl chord forgets held keys even when the chord key is bound.
+  target.dispatch("keydown", keyEvent("ArrowUp"));
+  target.dispatch("keydown", keyEvent("ArrowDown", { ctrlKey: true }));
+  target.dispatch("keydown", keyEvent("ArrowUp"));
+  assert.deepEqual(presses, [
+    "key:Q",
+    "key:Q",
+    "key:P",
+    "key:P",
+    "key:ARROWS",
+    "key:ARROWS",
+  ]);
+  source.dispose?.();
+  assert.equal(target.count(), 0);
+});
+
+test("keyboard: keys typed into a form field stay the field's (#12)", () => {
+  const target = new FakeTarget();
+  const { presses, press } = recorder();
+  attachKeyboard(target as KeyboardTarget, press);
+  const fields = [
+    { tagName: "INPUT" },
+    { tagName: "TEXTAREA" },
+    { tagName: "SELECT" },
+    { tagName: "DIV", isContentEditable: true },
+  ];
+  for (const field of fields) {
+    const typed = keyEvent("ArrowLeft", {
+      target: field as unknown as EventTarget,
+    });
+    target.dispatch("keydown", typed);
+    assert.equal(typed.prevented, false, field.tagName);
+  }
+  assert.deepEqual(presses, [], "typing a name does not join a player");
+  const onCanvas = keyEvent("ArrowLeft", {
+    target: { tagName: "CANVAS" } as unknown as EventTarget,
+  });
+  target.dispatch("keydown", onCanvas);
+  assert.ok(onCanvas.prevented);
+  assert.deepEqual(presses, ["key:ARROWS"]);
 });
 
 function pad(index: number, down: number[] = [], mapping = "standard") {
@@ -302,4 +375,29 @@ test("touch geometry: the drawn zones are the hit-test zones", () => {
   assert.equal(touchZoneAt(500, 100, width, height, count), undefined);
   assert.equal(touchZoneAt(500, 499, width, height, 0), undefined);
   assert.deepEqual(touchZoneLayout(width, height, 0), []);
+});
+
+test("touch: the source draws zones from the rect it hit-tests against (#12)", () => {
+  const surface = new FakeSurface(700, 350);
+  const { presses, press } = recorder();
+  const source = attachTouch(surface as PointerTarget, press);
+  assert.deepEqual(source.layout(), []);
+  source.setZoneCount(3);
+  const zones = source.layout();
+  assert.deepEqual(zones, touchZoneLayout(700, 350, 3));
+  for (const zone of zones) {
+    surface.dispatch("pointerdown", tap(zone.x + 1, zone.y + 1));
+    surface.dispatch(
+      "pointerdown",
+      tap(zone.x + zone.width - 1, zone.y + zone.height - 1),
+    );
+  }
+  assert.deepEqual(presses, [
+    "touch:0",
+    "touch:0",
+    "touch:1",
+    "touch:1",
+    "touch:2",
+    "touch:2",
+  ]);
 });

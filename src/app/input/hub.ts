@@ -34,10 +34,25 @@ export class InputHub {
   private readonly slotDevices = new Map<number, DeviceId>();
   private readonly pending = new Set<DeviceId>();
 
+  /**
+   * `onListenerError` receives what a press listener throws. Each listener is called on its own, so one failing
+   * listener neither stops the others nor unwinds into the device source that reported the press.
+   */
+  constructor(
+    private readonly onListenerError: (error: unknown) => void = (error) =>
+      console.error("Input press listener failed", error),
+  ) {}
+
   /** Report one press of `device`. Device sources call this; tests and bots may too. */
   press(device: DeviceId): void {
     this.pending.add(device);
-    for (const listener of [...this.listeners]) listener(device);
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(device);
+      } catch (error) {
+        this.onListenerError(error);
+      }
+    }
   }
 
   /** Listen for presses of any device. Returns the unsubscribe function. */
