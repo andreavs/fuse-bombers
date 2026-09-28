@@ -142,10 +142,15 @@ export function highestGround(t: TerrainView, x0: number, x1: number): number {
   return best;
 }
 
+/** A run of at most this many columns standing this far above both neighbours is a needle. */
+const NEEDLE_WIDTH = 2;
+const NEEDLE_HEIGHT = 3;
+
 /**
- * Carves a circular crater. Columns whose surface lies inside the circle (or at most one radius
- * above it, which would otherwise leave an unsupported overhang) are lowered to the circle's
- * bottom. Returns the inclusive changed column range, or null if nothing changed.
+ * Carves a circular crater. Every column the circle spans loses everything down to the circle's
+ * bottom: a height map cannot hold an overhang, so rock above the circle goes too. Needles of
+ * 1–2 columns left standing beside the crater are then levelled with their higher neighbour.
+ * Returns the inclusive changed column range, or null if nothing changed.
  */
 export function carveCrater(
   t: Terrain,
@@ -161,16 +166,31 @@ export function carveCrater(
     const dx = x + 0.5 - cx;
     const d2 = radius * radius - dx * dx;
     if (d2 <= 0) continue;
-    const dy = Math.sqrt(d2);
-    const bottom = Math.min(t.bedrock, cy + dy);
+    const bottom = Math.min(t.bedrock, cy + Math.sqrt(d2));
     const current = t.surface[x] ?? t.bedrock;
     if (current >= bottom) continue;
-    if (current < cy - dy - radius) continue; // solid rock well above the blast: leave it
     t.surface[x] = bottom;
     if (x0 < 0) x0 = x;
     x1 = x;
   }
   if (x0 < 0) return null;
+  // Level needles in and just beside the crater (a column between two craters can survive both).
+  // Off-arena neighbours count as bedrock (the arena edge is a pit, as in surfaceAt), so a sliver
+  // left against the edge is levelled with its in-arena neighbour.
+  const s = t.surface;
+  const from = Math.max(0, x0 - NEEDLE_WIDTH);
+  const to = Math.min(t.width - 1, x1 + 1);
+  for (let x = from; x <= to; x++) {
+    for (let w = 1; w <= NEEDLE_WIDTH && x + w <= t.width; w++) {
+      const level = Math.min(s[x - 1] ?? t.bedrock, s[x + w] ?? t.bedrock);
+      let lowest = -Infinity;
+      for (let k = x; k < x + w; k++) lowest = Math.max(lowest, s[k] ?? 0);
+      if (lowest >= level - NEEDLE_HEIGHT) continue;
+      for (let k = x; k < x + w; k++) s[k] = level;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x + w - 1);
+    }
+  }
   t.version++;
   return { x0, x1 };
 }
