@@ -14,7 +14,7 @@ import {
   ARENA_WIDTH,
   DEFAULT_TUNING,
 } from "../src/engine/tuning.js";
-import type { Gate } from "../src/engine/types.js";
+import type { Gate, Terrain } from "../src/engine/types.js";
 
 function arena(seed: number, players: number, peakScale = 1) {
   const rng = { rng: hashSeed(seed) };
@@ -106,6 +106,66 @@ test("crater carving lowers the surface but never below bedrock", () => {
   assert.equal(terrain.surface[x], terrain.bedrock);
   assert.equal(carveCrater(terrain, x, terrain.bedrock, 10), null);
   assert.ok(surfaceAt(terrain, -5) > ARENA_HEIGHT, "outside is a pit");
+});
+
+/** Runs of 1–2 columns standing more than 3 px above both neighbours, as `x:width:height`. */
+function needles(t: Terrain): string[] {
+  const s = t.surface;
+  const found: string[] = [];
+  for (let x = 1; x < s.length - 1; x++) {
+    for (let w = 1; w <= 2 && x + w < s.length; w++) {
+      const level = Math.min(s[x - 1] ?? 0, s[x + w] ?? 0);
+      const run = Array.from(s.subarray(x, x + w));
+      if (Math.max(...run) < level - 3)
+        found.push(`${x}:${w}:${Math.round(level - Math.min(...run))}`);
+    }
+  }
+  return found;
+}
+
+function flatTerrain(y: number): Terrain {
+  const surface = new Float64Array(ARENA_WIDTH).fill(y);
+  return {
+    width: ARENA_WIDTH,
+    height: ARENA_HEIGHT,
+    surface,
+    bedrock: 872,
+    version: 0,
+  };
+}
+
+test("a crater cuts every column it spans, so rockets hitting a wall leave no needle", () => {
+  // Issue #26: a rocket hitting the side of a wall explodes below the wall's top. The wall column
+  // was skipped while its neighbours were dug out, leaving a 1-px needle.
+  const t = flatTerrain(700);
+  for (let x = 400; x <= 430; x++) t.surface[x] = 500; // a plateau with a cliff at x = 430
+  carveCrater(t, 436, 690, 11); // from the right, into the cliff face
+  assert.deepEqual(needles(t), []);
+  const cliff = t.surface[430] ?? 0;
+
+  // Random craters dug into the ground and into the walls of earlier craters.
+  const rng = { rng: hashSeed(26) };
+  const { terrain } = arena(26, 4);
+  for (let i = 0; i < 200; i++) {
+    const x = range(rng, 300, 700);
+    const y = surfaceAt(terrain, x) + range(rng, -5, 60);
+    carveCrater(terrain, x, y, range(rng, 8, 28));
+    const found = needles(terrain);
+    assert.deepEqual(
+      found,
+      [],
+      `after crater ${i} at ${x.toFixed(1)}, ${y.toFixed(1)}`,
+    );
+  }
+  assert.ok(cliff > 690, `the cliff column is cut down, not left at ${cliff}`);
+});
+
+test("a column squeezed between two craters is levelled", () => {
+  const t = flatTerrain(700);
+  carveCrater(t, 420, 760, 10); // spans columns 410..429
+  carveCrater(t, 441, 760, 10); // spans columns 431..450; column 430 is in neither
+  assert.deepEqual(needles(t), []);
+  assert.ok((t.surface[430] ?? 0) > 760, `column 430 at ${t.surface[430]}`);
 });
 
 test("arcs are mirrored for left-facing castles and launch follows the angle", () => {

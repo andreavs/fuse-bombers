@@ -153,8 +153,9 @@ per tick on average (p99 0.7 ms).
 ## Rules as implemented (defaults in `DEFAULT_TUNING`)
 
 - **Terrain**: height map with rolling hills, a tall peak between each neighbouring pair of castles (and extra hills in
-  wide gaps), flattened pads under castles. Every explosion carves a circular crater (removing unsupported rock up to
-  one radius above the circle); castles fall onto the highest ground under their footprint.
+  wide gaps), flattened pads under castles. Every explosion carves a circular crater: each column the circle spans is
+  cut down to the circle's bottom (a height map has no overhangs, so rock above it goes too), and 1–2 px needles left
+  beside a crater are levelled with their higher neighbour. Castles fall onto the highest ground under their footprint.
 - **Aim**: edge castles sweep a one-sided arc (8°–89° above the horizon, mirrored) in 1.5 s; middle castles sweep
   10°–170° in 2.4 s. When all living opponents are on one side, the arc narrows to that side. The steep end matters:
   neighbours in a 5–6 player arena stand 225–345 px apart behind a tall peak and can only be reached with a lob of
