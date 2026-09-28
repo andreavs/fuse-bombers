@@ -26,6 +26,8 @@ export {
   view,
 } from "./round.js";
 export { predictTrajectory } from "./predict.js";
+export { BOT_DIFFICULTIES, createBot } from "./bot.js";
+export type { Bot, BotConfig, BotDifficulty } from "./bot.js";
 export type {
   ImpactKind,
   PredictOptions,
