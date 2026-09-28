@@ -11,6 +11,7 @@ import {
   isOffscreen,
   launchState,
 } from "./geometry.js";
+import { everyPairReachable } from "./reach.js";
 import { hashSeed, int, random, range, weighted } from "./rng.js";
 import {
   carveCrater,
@@ -131,20 +132,34 @@ export function createRound(config: RoundConfig): RoundState {
   return state;
 }
 
-/** Castle spots and terrain for a seed. */
+/** Arena attempts before `createRound` settles for the last one (peaks shrink as attempts fail). */
+const ARENA_ATTEMPTS = 12;
+
+/**
+ * Castle spots and terrain for a seed. An arena where some castle could never hit some other castle
+ * (at spawn, or in the duel the two would end up in) is re-rolled with a derived seed, and after a
+ * few failures the peaks are lowered, so every seed deterministically yields a fair arena.
+ */
 function generateArena(seed: number, n: number, tuning: Tuning) {
-  const holder = { rng: hashSeed(seed, 0x5eed) };
-  const xs = castlePositions(holder, n);
-  const terrain = generateTerrain(holder, xs);
-  const spots = xs.map((x) => ({
-    x,
-    y: highestGround(
-      terrain,
-      x - tuning.castleHalfWidth,
-      x + tuning.castleHalfWidth,
-    ),
-  }));
-  return { holder, spots, terrain };
+  let arena;
+  for (let attempt = 0; attempt < ARENA_ATTEMPTS; attempt++) {
+    const holder = { rng: hashSeed(seed, 0x5eed + attempt) };
+    const xs = castlePositions(holder, n);
+    const peakScale = Math.max(0, 1 - 0.1 * Math.max(0, attempt - 3));
+    const terrain = generateTerrain(holder, xs, peakScale);
+    const spots = xs.map((x) => ({
+      x,
+      y: highestGround(
+        terrain,
+        x - tuning.castleHalfWidth,
+        x + tuning.castleHalfWidth,
+      ),
+    }));
+    arena = { holder, spots, terrain };
+    if (everyPairReachable(terrain, tuning, spots)) break;
+  }
+  if (!arena) throw new Error("unreachable: no arena attempts");
+  return arena;
 }
 
 /** The read-only view of a round (the same object, typed so consumers cannot mutate it). */
