@@ -108,6 +108,48 @@ and shields, current terrain), without the per-rocket random spread. Returns:
 bot with reaction time R can evaluate `predictTrajectory(view, id, futureAngle(view, id, R))` and press R ticks early.
 Bots get no other privileged information. Gate motion is also a pure function: `gatePositionAt(gate, tick)`.
 
+## Bots
+
+`src/engine/bot.ts` plays a castle with the same one button as a human, using only the view, `futureAngle` and
+`predictTrajectory`.
+
+```ts
+import { createBot, type Bot } from "../engine/index.js";
+
+const bot: Bot = createBot({ difficulty: "normal", playerId: 3, seed }); // "easy" | "normal" | "hard"
+pressed[3] = bot(view(round)); // call once per tick, before `step`; true = press this tick
+
+// For a `(view, playerId) => boolean` policy:
+const bots = new Map(
+  ids.map((id) => [id, createBot({ difficulty, playerId: id, seed })]),
+);
+const policy = (v: RoundView, id: number) => bots.get(id)?.(v) ?? false;
+```
+
+A bot is a closure with a little memory: call it every tick of a round. The view may be the live state or a fresh copy
+each tick (a snapshot or `structuredClone` is fine). It resets itself when a new round starts, detected by the tick going
+backwards or `config.seed` changing (not by object identity), so one bot can play a whole match. Its RNG is reseeded
+each round from `seed` and the round's seed, so every round gets its own timing errors and a reused bot plays exactly
+like a fresh one. It is deterministic given `seed` and the views it sees, and never mutates the view.
+
+How it plays: while reloading it evaluates one candidate shot per `thinkEvery` ticks (the angle `reaction` ticks ahead)
+and scores it: a hit on an opponent, weighted towards the weakest castle, the leader and whoever hit it last; near misses
+partly; gate multipliers multiply the value and crates add to it. Each score is smoothed with its neighbouring angles
+(timing is never exact), and once loaded the bot presses when a shot is close to the best of the last sweep, relaxing
+its standards the longer it waits. The press lands up to `timingError` ticks early or late.
+
+| Difficulty | Timing error | Thinks every | Other                                                  |
+| ---------- | ------------ | ------------ | ------------------------------------------------------ |
+| easy       | ±10 ticks    | 4 ticks      | often fires a nervous random shot, barely values gates |
+| normal     | ±3 ticks     | 2 ticks      | likes gates and crates, some focus on weak castles     |
+| hard       | ±1 tick      | 1 tick       | picky, hunts gates and crates, finishes low-HP castles |
+
+Measured headlessly (bot-only rounds, `seed` 1..30 per pairing, sides swapped): easy beats "fire whenever loaded" 19 of
+30 two-player rounds, normal beats easy 28/30, hard beats easy 29/30 and normal 23/30. Median round length with all
+castles on one difficulty (20 seeds, 2–6 players): hard 31–60 s, normal 42–89 s, easy 95–128 s (easy rounds usually
+need sudden death); none needed the 180 s hard stop. `predictTrajectory` costs ~70 µs, so five hard bots cost ~0.2 ms
+per tick on average (p99 0.7 ms).
+
 ## Rules as implemented (defaults in `DEFAULT_TUNING`)
 
 - **Terrain**: height map with rolling hills, a tall peak between each neighbouring pair of castles (and extra hills in
