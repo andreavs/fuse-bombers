@@ -1,7 +1,7 @@
 import { attachGamepads, type GamepadLike } from "./gamepad.js";
 import { InputHub } from "./hub.js";
 import { attachKeyboard } from "./keyboard.js";
-import { attachTouch, touchZoneLayout } from "./touch.js";
+import { attachTouch } from "./touch.js";
 
 /** How one touch zone looks: its caption and (CSS) colour, e.g. the player's colour, or a "JOIN" zone. */
 export interface TouchZoneStyle {
@@ -60,11 +60,7 @@ export function createBrowserInput(
   let styles: readonly TouchZoneStyle[] = [];
 
   const draw = (): void => {
-    const rects = touchZoneLayout(
-      win.innerWidth,
-      win.innerHeight,
-      styles.length,
-    );
+    const rects = touch.layout();
     layer.replaceChildren(
       ...rects.map((rect, zone) => {
         const style = styles[zone];

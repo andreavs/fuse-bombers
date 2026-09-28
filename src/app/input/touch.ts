@@ -80,6 +80,11 @@ export interface TouchSource extends InputSource {
   /** Show `count` zones; taps outside them are ignored. Starts at 0. */
   setZoneCount(count: number): void;
   zoneCount(): number;
+  /**
+   * Where to draw the zones, relative to the target's top-left corner. Measured from the same rect that taps are
+   * hit-tested against, so the drawing cannot drift from the hit areas (scrollbars, mobile URL bars).
+   */
+  layout(): ZoneRect[];
 }
 
 export function attachTouch(
@@ -106,6 +111,10 @@ export function attachTouch(
       count = Math.max(0, Math.floor(next));
     },
     zoneCount: () => count,
+    layout: () => {
+      const rect = target.getBoundingClientRect();
+      return touchZoneLayout(rect.width, rect.height, count);
+    },
     dispose: () => target.removeEventListener("pointerdown", onPointerDown),
   };
 }
