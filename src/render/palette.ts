@@ -1,5 +1,4 @@
-// Colours of the cartoon look: player colours, gate colours and the landscape themes
-// (one per round, picked from the round's seed).
+// Colours of the cartoon look: player colours, gate colours and the two landscape themes.
 
 /** Player colours in slot order (roof, launcher band, health bar, rockets). */
 export const PLAYER_COLORS: readonly number[] = [
@@ -25,6 +24,7 @@ export function gateColor(multiplier: number): number {
 export interface Theme {
   /** Sky gradient, top to horizon. */
   sky: readonly string[];
+  sun: string;
   /** Far and near mountain ranges; the far range gets snow caps. */
   far: string;
   near: string;
@@ -40,6 +40,7 @@ export interface Theme {
 export const THEMES: readonly Theme[] = [
   {
     sky: ["#3a86e0", "#7dc0f5", "#d8f1ff"],
+    sun: "#fff7c2",
     far: "#8eaed6",
     near: "#6f93c2",
     snow: "#f6fbff",
@@ -47,5 +48,16 @@ export const THEMES: readonly Theme[] = [
     strata: "rgba(60, 34, 18, 0.28)",
     top: "#6fcf45",
     outline: "#2c1b0f",
+  },
+  {
+    sky: ["#6b3fa8", "#f26b4a", "#ffc873"],
+    sun: "#fff0b0",
+    far: "#b0587a",
+    near: "#8a3f5e",
+    snow: "#ffd9c2",
+    ground: ["#e5a55a", "#c27438", "#84451f"],
+    strata: "rgba(110, 50, 20, 0.3)",
+    top: "#ffd98a",
+    outline: "#4a200c",
   },
 ];

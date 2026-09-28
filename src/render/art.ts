@@ -2,6 +2,7 @@
 // material are painted with the Canvas 2D API. Only the crate and the fuse's flame and bomb come from public/.
 
 import type Phaser from "phaser";
+import { CARDS, type Card } from "../engine/index.js";
 import { css, THEMES, type Theme } from "./palette.js";
 
 export const CASTLE_SIZE = { width: 100, height: 80 } as const;
@@ -69,8 +70,26 @@ const SHIELD = `
 <circle cx="64" cy="64" r="61" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="3"/>
 <path d="M22 46A46 46 0 0 1 44 22" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="5" stroke-linecap="round"/>`;
 
+/** Badge colour and symbol (an SVG path, or text) per card. */
+const CARD_ART: Record<Card, readonly [string, string]> = {
+  unit: ["#e8403a", "+1"],
+  shield: ["#2f86e8", "M18 7l9 4-1 9-8 9-8-9-1-9z"],
+  rapid: ["#f0a800", "M21 5L11 20h6l-3 11 11-16h-6z"],
+  repair: ["#3fbf4a", "M15 8h6v7h7v6h-7v7h-6v-7H8v-6h7z"],
+  mega: ["#a258e0", "x3"],
+};
+
+const card = ([color, symbol]: readonly [string, string]): string => `
+<circle cx="18" cy="18" r="15" fill="#fffdf4" stroke="${color}" stroke-width="3"/>
+${
+  symbol.startsWith("M")
+    ? `<path d="${symbol}" fill="${color}" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>`
+    : `<text x="18" y="23.5" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"
+        font-weight="900" font-size="15" fill="${color}">${symbol}</text>`
+}`;
+
 /** Queues every sprite on the scene's loader; call from `preload`. Keys: `castle-N`, `launcher-N`, `rocket-N`,
- * `rocket-bomb`, `shield`. */
+ * `rocket-bomb`, `shield`, `card-<card>`. */
 export function loadSprites(
   scene: Phaser.Scene,
   colors: readonly number[],
@@ -93,6 +112,7 @@ export function loadSprites(
   });
   add("rocket-bomb", 20, 20, BOMB);
   add("shield", SHIELD_SIZE, SHIELD_SIZE, SHIELD);
+  for (const c of CARDS) add(`card-${c}`, 36, 36, card(CARD_ART[c]));
 }
 
 function lcg(seed: number): () => number {
@@ -109,14 +129,30 @@ function canvas(width: number, height: number) {
   return { element, ctx };
 }
 
-/** Sky and two mountain ranges; the arena terrain is drawn on top. */
+/** Sky, sun, clouds and two mountain ranges; the arena terrain is drawn on top. */
 function backdrop(theme: Theme, w: number, h: number): HTMLCanvasElement {
   const { element, ctx } = canvas(w, h);
   const sky = ctx.createLinearGradient(0, 0, 0, h * 0.75);
   theme.sky.forEach((c, i) => sky.addColorStop(i / (theme.sky.length - 1), c));
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
+  const sun = ctx.createRadialGradient(1240, 190, 30, 1240, 190, 170);
+  sun.addColorStop(0, theme.sun);
+  sun.addColorStop(0.35, `${theme.sun}88`);
+  sun.addColorStop(1, `${theme.sun}00`);
+  ctx.fillStyle = sun;
+  ctx.fillRect(0, 0, w, h);
   const random = lcg(7);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  for (let i = 0; i < 6; i++) {
+    const x = random() * w;
+    const y = 90 + random() * 200;
+    for (let k = 0; k < 4; k++) {
+      ctx.beginPath();
+      ctx.ellipse(x + k * 28, y - (k % 2) * 12, 34, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   const range = (base: number, peak: number, step: number): void => {
     ctx.beginPath();
     ctx.moveTo(0, h);
