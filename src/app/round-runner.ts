@@ -57,24 +57,32 @@ export class RoundRunner {
     return view(this.state);
   }
 
-  /** Runs every whole step that `deltaMs` of real time covers and returns all their events, in order. */
+  /**
+   * Runs every whole step that `deltaMs` of real time covers and returns all their events, in order. The events
+   * all belong to the round that `view` shows after the call: a frame that reaches the end of a round's aftermath
+   * stops there, and the next round starts on the following frame. A negative or non-finite `deltaMs` (a bad
+   * timestamp, e.g. after the device slept) counts as no time.
+   */
   advance(deltaMs: number): TickEvent[] {
     this.options.input?.poll?.();
-    this.carry = Math.min(
-      this.carry + Math.max(0, deltaMs),
-      MAX_STEPS_PER_FRAME * STEP_MS,
-    );
+    const delta = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
+    this.carry = Math.min(this.carry + delta, MAX_STEPS_PER_FRAME * STEP_MS);
     const events: TickEvent[] = [];
+    let stepped = false;
     while (this.carry >= STEP_MS) {
+      if (this.state.result && this.ticksOver >= this.aftermathTicks) {
+        if (stepped) break;
+        this.nextRound();
+      }
       this.carry -= STEP_MS;
+      stepped = true;
       for (const event of this.tick()) events.push(event);
     }
     return events;
   }
 
   private tick(): readonly TickEvent[] {
-    if (this.state.result && ++this.ticksOver > this.aftermathTicks)
-      this.nextRound();
+    if (this.state.result) this.ticksOver++;
     const { controllers, input } = this.options;
     const humans = input?.takePresses(controllers.length) ?? [];
     const round = view(this.state);

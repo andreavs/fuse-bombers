@@ -33,6 +33,7 @@ export interface PlayerLook {
  */
 export interface RoundSource {
   readonly view: RoundView;
+  /** Advances by real time; the returned events all belong to the round `view` shows afterwards. */
   advance(deltaMs: number): readonly TickEvent[];
 }
 
@@ -42,8 +43,17 @@ export interface RoundSceneData {
   readonly players?: readonly PlayerLook[];
 }
 
-/** Scene event emitted every frame after the engine advanced, with `(events, view)`. Effects and audio listen here. */
+/**
+ * Scene event emitted every frame after the engine advanced, with `(events, view)`. Effects and audio listen here.
+ * The events always belong to the round `view` shows (see `RoundSource.advance`).
+ */
 export const ROUND_EVENTS = "round-events";
+
+/**
+ * Scene event emitted with `(view)` when a round starts (the first one too), before that frame's `ROUND_EVENTS`.
+ * Listeners drop effects left over from the previous round here.
+ */
+export const ROUND_START = "round-start";
 
 /** Draw order. Effects slot in between, e.g. explosions at `DEPTH.rockets + 1`. */
 export const DEPTH = {
@@ -164,7 +174,8 @@ export class RoundScene extends Phaser.Scene {
     // Raw frame time: Phaser's smoothed delta is clamped to 1/60 s while the window is unfocused.
     const events = this.source.advance(this.game.loop.rawDelta);
     const view = this.source.view;
-    if (view !== this.current) this.startRound(view);
+    const started = view !== this.current;
+    if (started) this.startRound(view);
     this.terrain.update(view.terrain);
     this.hud.clear();
     this.drawGates(view);
@@ -184,6 +195,7 @@ export class RoundScene extends Phaser.Scene {
     this.drawRockets(view);
     this.drawFuse(view, time);
     this.drawBanner(view);
+    if (started) this.events.emit(ROUND_START, view);
     this.events.emit(ROUND_EVENTS, events, view);
   }
 
