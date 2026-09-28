@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+artifacts/
+pnpm-lock.yaml
+# Nested agent worktrees are whole checkouts of this repository.
+.claude/
