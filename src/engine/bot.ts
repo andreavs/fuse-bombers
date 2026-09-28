@@ -21,11 +21,19 @@ export interface BotConfig {
   difficulty: BotDifficulty;
   /** Castle id the bot plays. */
   playerId: number;
-  /** Seeds the bot's own RNG (timing errors, wasted shots); same seed + same views = same presses. */
+  /**
+   * Seeds the bot's own RNG (timing errors, wasted shots); same seed + same views = same presses.
+   * The RNG is reseeded at the start of every round from this and the round's `config.seed`, so each
+   * round gets its own error stream and a bot reused across a match plays like a fresh one.
+   */
   seed: number;
 }
 
-/** Call once per tick with the view *before* `step`; true = press the button this tick. */
+/**
+ * Call once per tick with the view *before* `step`; true = press the button this tick. The view may
+ * be the live state or a fresh copy every tick: a new round is recognised by the tick going
+ * backwards or the round seed changing, never by object identity.
+ */
 export type Bot = (view: RoundView) => boolean;
 
 interface Profile {
@@ -110,8 +118,9 @@ const SWARM_CAP = 250;
 export function createBot(config: BotConfig): Bot {
   const p = PROFILES[config.difficulty];
   const id = config.playerId;
-  const rng: RngHolder = { rng: hashSeed(config.seed, 7919 + id) };
-  let round: RoundView | null = null;
+  const rng: RngHolder = { rng: 0 };
+  let roundSeed = NaN;
+  let lastTick = -1;
   let facing = "";
   let pressAt = -1;
   let loadedAt = -1;
@@ -124,8 +133,13 @@ export function createBot(config: BotConfig): Bot {
   return (view) => {
     const me = view.castles[id];
     // A new round, or a death that changed our arc (plans and remembered angles are then stale).
-    if (view !== round || me?.facing !== facing) {
-      round = view;
+    const newRound = view.tick < lastTick || view.config.seed !== roundSeed;
+    lastTick = view.tick;
+    if (newRound) {
+      roundSeed = view.config.seed;
+      rng.rng = hashSeed(hashSeed(config.seed, roundSeed), 7919 + id);
+    }
+    if (newRound || me?.facing !== facing) {
       facing = me?.facing ?? "";
       pressAt = loadedAt = -1;
       seen = [];

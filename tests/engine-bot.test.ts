@@ -82,10 +82,78 @@ test("bots are deterministic given the seed", () => {
   assert.equal(fingerprint(a), fingerprint(b));
 });
 
-test("a bot resets when handed a new round", () => {
-  const bot = createBot({ difficulty: "hard", playerId: 0, seed: 1 });
-  for (const seed of [1, 2]) {
-    const s = playOut({ seed, playerCount: 2 }, (st) => [bot(st)]);
-    assert.ok(s.castles[0]!.stats.volleys > 0, `no volley in round ${seed}`);
+const ALL: readonly BotDifficulty[] = ["easy", "normal", "hard"];
+
+/** A frozen deep copy of the state, as an app handing out snapshots might pass it. */
+function snapshot(state: RoundState): RoundState {
+  const freeze = (o: unknown): void => {
+    if (typeof o !== "object" || o === null || ArrayBuffer.isView(o)) return;
+    Object.freeze(o);
+    for (const v of Object.values(o)) freeze(v);
+  };
+  const copy = structuredClone(state);
+  freeze(copy);
+  return copy;
+}
+
+/** Plays rounds back to back with one set of bots, each fed `view(state)`; returns fingerprints. */
+function playMatch(
+  rounds: readonly number[],
+  kinds: readonly BotDifficulty[],
+  view: (state: RoundState) => RoundState = (s) => s,
+) {
+  const bots = kinds.map((difficulty, playerId) =>
+    createBot({ difficulty, playerId, seed: 3 }),
+  );
+  const presses = kinds.map(() => 0);
+  const prints = rounds.map((seed) =>
+    fingerprint(
+      playOut({ seed, playerCount: kinds.length }, (state) => {
+        const v = view(state);
+        return bots.map((bot, id) => {
+          const press = bot(v);
+          if (press) presses[id]!++;
+          return press;
+        });
+      }),
+    ),
+  );
+  return { prints, presses };
+}
+
+test("bots handed a fresh copy of the view every tick play exactly as with the live state", () => {
+  // Round 2 has a new seed; round 3 repeats it, so only the tick going backwards marks it as new.
+  const rounds = [11, 12, 12];
+  const live = playMatch(rounds, ALL);
+  const copied = playMatch(rounds, ALL, snapshot);
+  for (const [id, n] of copied.presses.entries())
+    assert.ok(n > 0, `${ALL[id]} bot never pressed on copied views`);
+  assert.deepEqual(copied.presses, live.presses, "press counts differ");
+  assert.deepEqual(copied.prints, live.prints, "rounds differ");
+});
+
+test("bots never mutate the state they are shown", () => {
+  const kinds: BotDifficulty[] = ["easy", "normal", "hard", "hard"];
+  const bots = kinds.map((difficulty, playerId) =>
+    createBot({ difficulty, playerId, seed: 4 }),
+  );
+  playOut({ seed: 4, playerCount: kinds.length }, (state) => {
+    const before = fingerprint(state);
+    const pressed = bots.map((bot) => bot(state));
+    assert.equal(fingerprint(state), before, `mutated at tick ${state.tick}`);
+    return pressed;
+  });
+});
+
+test("a bot reused across rounds plays each round like a fresh bot", () => {
+  const kinds: BotDifficulty[] = ["hard", "easy"];
+  // New seed, and the same seed again (the reset must then come from the tick going backwards).
+  for (const [first, second] of [
+    [1, 2],
+    [2, 2],
+  ] as const) {
+    const reused = playMatch([first, second], kinds).prints[1];
+    const fresh = playMatch([second], kinds).prints[0];
+    assert.equal(reused, fresh, `round ${first} leaked into round ${second}`);
   }
 });

@@ -126,8 +126,11 @@ const bots = new Map(
 const policy = (v: RoundView, id: number) => bots.get(id)?.(v) ?? false;
 ```
 
-A bot is a closure with a little memory: call it every tick of a round (it resets itself when handed a different round
-object, so one bot can play a whole match). It is deterministic given `seed` and the views it sees.
+A bot is a closure with a little memory: call it every tick of a round. The view may be the live state or a fresh copy
+each tick (a snapshot or `structuredClone` is fine). It resets itself when a new round starts, detected by the tick going
+backwards or `config.seed` changing (not by object identity), so one bot can play a whole match. Its RNG is reseeded
+each round from `seed` and the round's seed, so every round gets its own timing errors and a reused bot plays exactly
+like a fresh one. It is deterministic given `seed` and the views it sees, and never mutates the view.
 
 How it plays: while reloading it evaluates one candidate shot per `thinkEvery` ticks (the angle `reaction` ticks ahead)
 and scores it: a hit on an opponent, weighted towards the weakest castle, the leader and whoever hit it last; near misses
