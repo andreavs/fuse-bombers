@@ -103,6 +103,11 @@ export interface Tuning {
   gateDriftSpeed: readonly [number, number];
   /** Half-width of the horizontal range a gate drifts in. */
   gateDriftRange: number;
+  /**
+   * Minimum horizontal distance between the centres of two live gates. Each gate drifts in its own
+   * lane, kept this far from every other lane, so gates never overlap.
+   */
+  gateSpacing: number;
   gateBobAmp: number;
   gateBobPeriod: number;
   /** Total fan angle (degrees) of split children, per extra child, capped by `splitFanMaxDeg`. */
@@ -187,6 +192,7 @@ export const DEFAULT_TUNING: Tuning = {
   gateLife: [14, 22],
   gateDriftSpeed: [12, 30],
   gateDriftRange: 170,
+  gateSpacing: 80,
   gateBobAmp: 14,
   gateBobPeriod: 3.5,
   splitFanPerChildDeg: 2.5,
