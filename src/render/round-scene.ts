@@ -12,6 +12,7 @@ import {
   type TickEvent,
 } from "../engine/index.js";
 import * as art from "./art.js";
+import { Effects } from "./effects/effects.js";
 import {
   css,
   gateColor,
@@ -127,6 +128,8 @@ export class RoundScene extends Phaser.Scene {
   private shownRockets = 0;
   private gateLabels: Pool<Phaser.GameObjects.Text> = new Map();
   private crates: Pool<Phaser.GameObjects.Container> = new Map();
+  /** Explosions, trails, damage numbers and shake; exposed for browser checks. */
+  effects!: Effects;
 
   constructor() {
     super(RoundScene.KEY);
@@ -176,6 +179,7 @@ export class RoundScene extends Phaser.Scene {
     this.suddenDeath.setColor("#ff4a3a");
     this.banner = this.text(W / 2, H * 0.32, "", 56, DEPTH.banner);
     this.banner.setVisible(false);
+    this.effects = new Effects(this);
   }
 
   update(time: number): void {
@@ -343,9 +347,11 @@ export class RoundScene extends Phaser.Scene {
           .setTexture(key)
           .setOrigin(r.bomb ? 0.5 : art.ROCKET.body / art.ROCKET.width, 0.5);
       }
-      const scale = r.mega
-        ? 1.7
-        : 1 + Math.min(0.8, Math.log2(Math.max(1, r.power)) * 0.25);
+      const scale =
+        (r.bomb ? 1 : 1.3) *
+        (r.mega
+          ? 1.7
+          : 1 + Math.min(0.8, Math.log2(Math.max(1, r.power)) * 0.25));
       image.setVisible(true).setPosition(r.x, r.y).setScale(scale);
       image.setRotation(r.bomb ? 0 : Math.atan2(r.vy, r.vx));
     }
