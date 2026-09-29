@@ -38,6 +38,13 @@ export interface RoundRunnerOptions {
 const STEP_MS = 1000 / TICK_HZ;
 /** After a stall (background tab, debugger) drop time instead of fast-forwarding through it. */
 const MAX_STEPS_PER_FRAME = 6;
+/** Sim speed once only bots are left standing, and how fast (×/s of real time) the speed ramps up and back down. */
+export const FAST_FORWARD = { speed: 2, rampUp: 0.8, rampDown: 4 } as const;
+/**
+ * Humans count as still playing for this long after their last castle fell or their ghost's button was last
+ * pressed; after that a bots-only round fast-forwards.
+ */
+export const GHOST_HOLD_SECONDS = 5;
 
 /**
  * The app's game loop: advances the engine at a fixed 60 Hz from real frame times, asks bots and the input hub
@@ -50,9 +57,14 @@ export class RoundRunner {
   private carry = 0;
   private ticksOver = 0;
   private readonly aftermathTicks: number;
+  private readonly humans: number[];
+  /** Last tick a human castle stood or a human ghost pressed. */
+  private humanTick = 0;
+  private simSpeed = 1;
 
   constructor(private readonly options: RoundRunnerOptions) {
     this.aftermathTicks = Math.round((options.aftermath ?? 4) * TICK_HZ);
+    this.humans = options.controllers.flatMap((bot, id) => (bot ? [] : [id]));
     this.match = this.newMatch(options.seed);
     this.state = createRound(nextRoundConfig(this.match));
   }
@@ -60,6 +72,24 @@ export class RoundRunner {
   /** The current round; a new object once the next round starts. */
   get view(): RoundView {
     return view(this.state);
+  }
+
+  /** Current sim speed: 1, or up to `FAST_FORWARD.speed` while bots finish a round without the humans. */
+  get speed(): number {
+    return this.simSpeed;
+  }
+
+  /**
+   * True when at least one human plays, every human castle is destroyed, the round is still on and no human ghost
+   * pressed within `GHOST_HOLD_SECONDS`: nobody is waiting on anything but the bots.
+   */
+  get botsOnly(): boolean {
+    const round = this.state;
+    return (
+      this.humans.length > 0 &&
+      !round.result &&
+      round.tick - this.humanTick > GHOST_HOLD_SECONDS * TICK_HZ
+    );
   }
 
   /**
@@ -71,7 +101,15 @@ export class RoundRunner {
   advance(deltaMs: number): TickEvent[] {
     this.options.input?.poll?.();
     const delta = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
-    this.carry = Math.min(this.carry + delta, MAX_STEPS_PER_FRAME * STEP_MS);
+    const ramp =
+      (delta / 1000) *
+      (this.botsOnly ? FAST_FORWARD.rampUp : -FAST_FORWARD.rampDown);
+    this.simSpeed = Math.min(
+      FAST_FORWARD.speed,
+      Math.max(1, this.simSpeed + ramp),
+    );
+    const cap = MAX_STEPS_PER_FRAME * STEP_MS * this.simSpeed;
+    this.carry = Math.min(this.carry + delta * this.simSpeed, cap);
     const events: TickEvent[] = [];
     let stepped = false;
     while (this.carry >= STEP_MS) {
@@ -94,6 +132,10 @@ export class RoundRunner {
     const pressed = controllers.map((bot, id) =>
       bot ? bot(round, id) : humans[id] === true,
     );
+    const humanActive = this.humans.some(
+      (id) => this.state.castles[id]?.alive || pressed[id],
+    );
+    if (humanActive) this.humanTick = this.state.tick;
     const events = step(this.state, pressed);
     for (const event of events)
       if (event.type === "round-over")
@@ -107,6 +149,8 @@ export class RoundRunner {
       this.match = this.newMatch(this.match.config.seed + 1);
     this.state = createRound(nextRoundConfig(this.match));
     this.ticksOver = 0;
+    this.humanTick = 0;
+    this.simSpeed = 1;
   }
 
   private newMatch(seed: number): MatchState {

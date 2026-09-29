@@ -157,7 +157,7 @@ export class Flow implements RoundSource {
         this.options.input.touchEnabled &&
         !this.paused &&
         (screen.kind === "countdown" || screen.kind === "playing");
-      html = screens.hudHtml(info, pause);
+      html = screens.hudHtml(info, pause, runner.speed);
       if (this.paused) html += screens.pauseHtml();
       else if (screen.kind === "countdown")
         html += screens.countdownHtml(

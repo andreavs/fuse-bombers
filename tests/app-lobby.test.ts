@@ -35,13 +35,14 @@ test("joining grows the player count, which cannot shrink below a seated human",
 
 test("bot difficulty cycles per slot or for all bots; rounds to win are clamped", () => {
   const lobby = new Lobby();
+  assert.equal(lobby.seats()[1]?.difficulty, "easy", "bots start easy");
   lobby.press("key:Q");
   lobby.cycleDifficulty(2);
-  assert.equal(lobby.seats()[2]?.difficulty, "hard");
+  assert.equal(lobby.seats()[2]?.difficulty, "normal");
   lobby.cycleDifficulty();
   assert.deepEqual(
     lobby.seats().map((s) => s.difficulty),
-    ["hard", "hard", "hard", "hard"],
+    ["normal", "normal", "normal", "normal"],
   );
   lobby.setWinsToWin(0);
   assert.equal(lobby.winsToWin, 1);

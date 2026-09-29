@@ -33,7 +33,7 @@ export class Lobby {
   playerCount = 4;
   winsToWin = 3;
   readonly devices = Array<DeviceId | undefined>(MAX_PLAYERS).fill(undefined);
-  readonly difficulties = Array<BotDifficulty>(MAX_PLAYERS).fill("normal");
+  readonly difficulties = Array<BotDifficulty>(MAX_PLAYERS).fill("easy");
 
   /** A device pressed its button: join it, or take it out if it already sits. Returns its slot, or undefined. */
   press(device: DeviceId): { slot: number; joined: boolean } | undefined {
@@ -85,12 +85,12 @@ export class Lobby {
   /** Next difficulty for one bot slot, or for every slot when `slot` is undefined (all follow the first bot). */
   cycleDifficulty(slot?: number): void {
     const next = (d: BotDifficulty): BotDifficulty =>
-      BOT_DIFFICULTIES[(BOT_DIFFICULTIES.indexOf(d) + 1) % 3] ?? "normal";
+      BOT_DIFFICULTIES[(BOT_DIFFICULTIES.indexOf(d) + 1) % 3] ?? "easy";
     if (slot !== undefined) {
-      this.difficulties[slot] = next(this.difficulties[slot] ?? "normal");
+      this.difficulties[slot] = next(this.difficulties[slot] ?? "easy");
       return;
     }
-    const first = this.seats().find((s) => !s.device)?.difficulty ?? "normal";
+    const first = this.seats().find((s) => !s.device)?.difficulty ?? "easy";
     this.difficulties.fill(next(first));
   }
 
@@ -103,7 +103,7 @@ export class Lobby {
         name: PLAYER_NAMES[slot] ?? `P${slot + 1}`,
         color: playerColor(slot),
         device,
-        difficulty: this.difficulties[slot] ?? "normal",
+        difficulty: this.difficulties[slot] ?? "easy",
         tag: device ? deviceLabel(device) : "BOT",
       };
     });

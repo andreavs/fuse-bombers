@@ -102,6 +102,21 @@ test("a frame of hundreds of events becomes at most one cue per kind", () => {
   assert.ok(planCues([crater(11)])[0]!.size < 0.3);
 });
 
+test("ghosts sound when they appear and when they drop a bomb", () => {
+  const cues = planCues([
+    { type: "ghost-spawned", tick: 1, owner: 2, x: 400, y: 64 },
+    ...[1, 2].map((rocketId): TickEvent => ({
+      type: "ghost-bomb-dropped",
+      tick: 1,
+      owner: rocketId,
+      rocketId,
+      x: 400,
+      y: 64,
+    })),
+  ]);
+  assert.deepEqual(cues.map((cue) => cue.kind).sort(), ["drop", "ghost"]);
+});
+
 test("the limiter enforces per-kind gaps, per-kind voices and the global cap", () => {
   const limiter = new CueLimiter();
   assert.equal(limiter.allow("explosion", 0), true);

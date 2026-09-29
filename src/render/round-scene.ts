@@ -4,10 +4,13 @@ import {
   ARENA_WIDTH,
   castleCenter,
   fuseProgress,
+  isGhostLoaded,
   isLoaded,
   launcherPivot,
+  predictGhostBomb,
   predictTrajectory,
   type CastleView,
+  type GhostView,
   type RoundView,
   type TickEvent,
 } from "../engine/index.js";
@@ -87,6 +90,17 @@ const FUSE = { y: 28, x0: 70, x1: 1510 } as const;
 
 type Pool<O> = Map<number, O>;
 
+/** One ghost on screen: the blimp, the bomb hanging under it while loaded, and a human's key badge. */
+interface GhostSprite {
+  readonly blimp: Phaser.GameObjects.Image;
+  readonly bomb: Phaser.GameObjects.Image;
+  readonly badge: Phaser.GameObjects.Text | undefined;
+  destroy(): void;
+}
+
+/** Where the loaded bomb hangs, below the ghost's centre (under the gondola). */
+const HANG_Y = 40;
+
 /** Keeps one display object per live engine id: creates, places, and destroys those whose id is gone. */
 function sync<T extends { readonly id: number }, O extends { destroy(): void }>(
   pool: Pool<O>,
@@ -110,8 +124,8 @@ function sync<T extends { readonly id: number }, O extends { destroy(): void }>(
 
 /**
  * Draws one round from its `RoundView`: backdrop, eroding terrain, castles with launchers, health, reload and
- * shields, pooled rockets, gates, crates, the fuse and a winner banner. It owns no rules or timers. Start it again
- * with new `RoundSceneData` to draw another match.
+ * shields, pooled rockets, ghost blimps, gates, crates, the fuse and a winner banner. It owns no rules or timers.
+ * Start it again with new `RoundSceneData` to draw another match.
  */
 export class RoundScene extends Phaser.Scene {
   static readonly KEY = "round";
@@ -135,6 +149,7 @@ export class RoundScene extends Phaser.Scene {
   private shownRockets = 0;
   private gateLabels: Pool<Phaser.GameObjects.Text> = new Map();
   private crates: Pool<Phaser.GameObjects.Container> = new Map();
+  private ghosts: Pool<GhostSprite> = new Map();
   /** Explosions, trails, damage numbers and shake; exposed for browser checks. */
   effects!: Effects;
 
@@ -154,6 +169,7 @@ export class RoundScene extends Phaser.Scene {
     this.shownRockets = 0;
     this.gateLabels = new Map();
     this.crates = new Map();
+    this.ghosts = new Map();
   }
 
   preload(): void {
@@ -210,6 +226,12 @@ export class RoundScene extends Phaser.Scene {
       },
     );
     for (const c of view.castles) this.drawCastle(view, c, time);
+    sync(
+      this.ghosts,
+      view.ghosts.map((g) => ({ id: g.owner, g })),
+      ({ g }) => this.createGhost(g.owner),
+      (sprite, { g }) => this.drawGhost(view, g, sprite, time),
+    );
     this.drawRockets(view);
     this.drawFuse(view, time);
     this.drawBanner(view);
@@ -254,7 +276,7 @@ export class RoundScene extends Phaser.Scene {
     for (const object of [...this.castles.flat(), ...this.tags])
       object.destroy();
     for (const object of this.prompts) object?.destroy();
-    for (const pool of [this.gateLabels, this.crates]) {
+    for (const pool of [this.gateLabels, this.crates, this.ghosts]) {
       for (const object of pool.values()) object.destroy();
       pool.clear();
     }
@@ -374,6 +396,81 @@ export class RoundScene extends Phaser.Scene {
     );
   }
 
+  private createGhost(owner: number): GhostSprite {
+    const { color, tag, prompt } = this.look(owner);
+    const blimp = this.add
+      .image(0, 0, art.spriteKey("blimp", color))
+      .setOrigin(0.5, art.BLIMP.centerY / art.BLIMP.height)
+      .setScale(1.2)
+      .setDepth(DEPTH.castles + 1);
+    const bomb = this.add
+      .image(0, 0, art.spriteKey("ghost-bomb", color))
+      .setRotation(Math.PI / 2)
+      .setScale(1.4)
+      .setDepth(DEPTH.castles);
+    // Humans get their key painted on the envelope, so everyone knows whose blimp it is.
+    const badge =
+      prompt !== undefined && tag
+        ? this.text(0, 0, tag, 16, DEPTH.hud + 1)
+        : undefined;
+    return {
+      blimp,
+      bomb,
+      badge,
+      destroy: () => {
+        blimp.destroy();
+        bomb.destroy();
+        badge?.destroy();
+      },
+    };
+  }
+
+  /**
+   * A drifting translucent blimp in the player's colour. Loaded, a bomb hangs under it (and a human gets a short
+   * drop guide and a pulsing ring); reloading, a ring fills around the empty hook.
+   */
+  private drawGhost(
+    view: RoundView,
+    g: GhostView,
+    sprite: GhostSprite,
+    time: number,
+  ): void {
+    const { color, prompt } = this.look(g.owner);
+    const human = prompt !== undefined;
+    const bob = 3 * Math.sin(time / 380 + g.owner);
+    const [x, y] = [g.x, g.y + bob];
+    const left = g.vx < 0;
+    sprite.blimp
+      .setPosition(x, y)
+      .setFlipX(left)
+      .setAlpha(human ? 0.85 : 0.7);
+    const hud = this.hud;
+    if (sprite.badge) {
+      const b = sprite.badge.setPosition(x + (left ? 8 : -8), y + 2);
+      const [w, h] = [b.width + 12, b.height + 8];
+      hud.fillStyle(INK).fillRoundedRect(b.x - w / 2, b.y - h / 2, w, h, 6);
+      hud.lineStyle(2, 0xffffff, 0.9);
+      hud.strokeRoundedRect(b.x - w / 2, b.y - h / 2, w, h, 6);
+    }
+    const loaded = isGhostLoaded(g) && !view.result;
+    const hook = { x, y: y + HANG_Y };
+    sprite.bomb.setVisible(loaded).setPosition(hook.x, hook.y);
+    if (loaded && human) {
+      const path = predictGhostBomb(view, g.owner, 0, 60);
+      // The guide starts below the blimp, where the bomb comes out.
+      const below = path?.points.filter((p) => p.y > g.y + HANG_Y + 14) ?? [];
+      aim.drawGuide(hud, below, color, aim.GHOST_GUIDE);
+      aim.drawReady(hud, hook, color, time, true);
+    } else if (!loaded && g.reloadTotalTicks > 0 && !view.result) {
+      const done = 1 - g.reloadTicks / g.reloadTotalTicks;
+      const start = -Math.PI / 2;
+      hud.lineStyle(6, INK, 0.6).strokeCircle(hook.x, hook.y, 11);
+      hud.lineStyle(3, human ? 0xffffff : color, 0.95).beginPath();
+      hud.arc(hook.x, hook.y, 11, start, start + done * Math.PI * 2);
+      hud.strokePath();
+    }
+  }
+
   /** One pooled image per live rocket, the smoke streak baked into its texture. */
   private drawRockets(view: RoundView): void {
     const rockets = view.rockets;
@@ -385,15 +482,19 @@ export class RoundScene extends Phaser.Scene {
         .setDepth(DEPTH.rockets));
       const key = r.bomb
         ? "rocket-bomb"
-        : art.spriteKey("rocket", this.look(r.owner).color);
+        : art.spriteKey(
+            r.ghost ? "ghost-bomb" : "rocket",
+            this.look(r.owner).color,
+          );
       if (this.rocketKeys[i] !== key) {
         this.rocketKeys[i] = key;
+        const round = r.bomb || r.ghost;
         image
           .setTexture(key)
-          .setOrigin(r.bomb ? 0.5 : art.ROCKET.body / art.ROCKET.width, 0.5);
+          .setOrigin(round ? 0.5 : art.ROCKET.body / art.ROCKET.width, 0.5);
       }
       const scale =
-        (r.bomb ? 1 : 1.3) *
+        (r.bomb ? 1 : r.ghost ? 1.5 : 1.3) *
         (r.mega
           ? 1.7
           : 1 + Math.min(0.8, Math.log2(Math.max(1, r.power)) * 0.25));

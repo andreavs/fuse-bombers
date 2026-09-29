@@ -136,6 +136,15 @@ export class WebAudioBackend implements AudioBackend {
         this.boom(1);
         this.tone("sawtooth", 440, 55, 1.2, 0.1);
         break;
+      case "ghost":
+        // A spooky rising "wooo" as the blimp appears.
+        this.tone("triangle", 330, 660, 0.8, 0.1);
+        this.tone("sine", 495, 990, 0.7, 0.05, 0.08);
+        break;
+      case "drop":
+        // The classic falling-bomb whistle.
+        this.tone("sine", 1500, 600, 0.45, 0.06 + 0.04 * s);
+        break;
       case "alarm":
         for (let i = 0; i < 8; i++)
           this.tone("square", i % 2 ? 660 : 880, 0, 0.2, 0.07, i * 0.22);
