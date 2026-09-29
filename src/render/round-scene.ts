@@ -24,7 +24,10 @@ import { TerrainLayer } from "./terrain-layer.js";
 /** How one player looks on screen. */
 export interface PlayerLook {
   readonly name: string;
+  /** Roof, launcher band, health bar, rockets and shield tint. */
   readonly color: number;
+  /** A short label above the castle, e.g. the player's button (`Q`, `PAD 1`) or `BOT`. */
+  readonly tag?: string;
 }
 
 /**
@@ -118,6 +121,7 @@ export class RoundScene extends Phaser.Scene {
   private suddenDeath!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
   private castles: Phaser.GameObjects.Image[][] = [];
+  private tags: Phaser.GameObjects.Text[] = [];
   private rockets: Phaser.GameObjects.Image[] = [];
   private rocketKeys: string[] = [];
   private shownRockets = 0;
@@ -133,6 +137,7 @@ export class RoundScene extends Phaser.Scene {
     this.players = data.players ?? [];
     this.current = null;
     this.castles = [];
+    this.tags = [];
     this.rockets = [];
     this.rocketKeys = [];
     this.shownRockets = 0;
@@ -142,7 +147,10 @@ export class RoundScene extends Phaser.Scene {
 
   preload(): void {
     const base = import.meta.env.BASE_URL;
-    art.loadSprites(this, PLAYER_COLORS);
+    art.loadSprites(this, [
+      ...PLAYER_COLORS,
+      ...this.players.map((p) => p.color),
+    ]);
     this.load.image("crate", `${base}sprites/crate-wood.png`);
     for (const [key, size] of [
       ["flame", 48],
@@ -231,22 +239,27 @@ export class RoundScene extends Phaser.Scene {
     const theme = Math.abs(Math.trunc(view.config.seed)) % THEMES.length;
     this.backdrop.setTexture(`backdrop-${theme}`);
     this.terrain.reset(view.terrain, THEMES[theme] ?? THEMES[0]!);
-    for (const sprite of this.castles.flat()) sprite.destroy();
+    for (const object of [...this.castles.flat(), ...this.tags])
+      object.destroy();
     for (const pool of [this.gateLabels, this.crates]) {
       for (const object of pool.values()) object.destroy();
       pool.clear();
     }
+    this.tags = view.castles.map((c) =>
+      this.text(0, 0, this.look(c.id).tag ?? "", 14, DEPTH.hud).setColor(
+        css(this.look(c.id).color),
+      ),
+    );
     this.castles = view.castles.map((c) => {
-      const tint = Phaser.Display.Color.ValueToColor(
-        this.look(c.id).color,
-      ).lighten(25);
+      const color = this.look(c.id).color;
+      const tint = Phaser.Display.Color.ValueToColor(color).lighten(25);
       return [
         this.add
-          .image(0, 0, `castle-${c.id}`)
+          .image(0, 0, art.spriteKey("castle", color))
           .setOrigin(0.5, 1)
           .setDepth(DEPTH.castles),
         this.add
-          .image(0, 0, `launcher-${c.id}`)
+          .image(0, 0, art.spriteKey("launcher", color))
           .setOrigin(art.LAUNCHER.pivot / art.LAUNCHER.width, 0.5)
           .setDepth(DEPTH.castles - 1),
         this.add
@@ -264,6 +277,9 @@ export class RoundScene extends Phaser.Scene {
     if (!body || !launcher || !shield) return;
     body.setPosition(c.x, c.y + 1);
     launcher.setVisible(c.alive);
+    this.tags[c.id]
+      ?.setVisible(c.alive)
+      .setPosition(c.x, c.y - art.CASTLE_SIZE.height - 34);
     shield.setVisible(c.alive && c.shieldHp > 0);
     if (!c.alive) {
       body.setTint(0x4a4a55).setAngle(c.id % 2 === 0 ? -8 : 8);
@@ -320,7 +336,7 @@ export class RoundScene extends Phaser.Scene {
         .setDepth(DEPTH.rockets));
       const key = r.bomb
         ? "rocket-bomb"
-        : `rocket-${r.owner % PLAYER_COLORS.length}`;
+        : art.spriteKey("rocket", this.look(r.owner).color);
       if (this.rocketKeys[i] !== key) {
         this.rocketKeys[i] = key;
         image

@@ -53,6 +53,12 @@ const rocket = (body: string): string => `
 <path d="M32 3h10q6 4 0 8H32z" fill="${body}" stroke="${INK}" stroke-width="1.5"/>
 <path d="M38 4.5h2v5h-2z" fill="#fff"/>`;
 
+/** The castle sprite as standalone SVG markup, for menus drawn outside Phaser. */
+export function castleSvg(color: number): string {
+  const { width, height } = CASTLE_SIZE;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${castle(css(color))}</svg>`;
+}
+
 const BOMB = `
 <circle cx="10" cy="12" r="7" fill="#2a2d38" stroke="#0c0d12" stroke-width="1.5"/>
 <circle cx="7.5" cy="9.5" r="2" fill="#fff" fill-opacity=".45"/>
@@ -88,7 +94,15 @@ ${
         font-weight="900" font-size="15" fill="${color}">${symbol}</text>`
 }`;
 
-/** Queues every sprite on the scene's loader; call from `preload`. Keys: `castle-N`, `launcher-N`, `rocket-N`,
+/** Texture key of a player-coloured sprite (`castle`, `launcher` or `rocket`) in `color`, e.g. `castle-e8403a`. */
+export function spriteKey(
+  kind: "castle" | "launcher" | "rocket",
+  color: number,
+): string {
+  return `${kind}-${css(color).slice(1)}`;
+}
+
+/** Queues every sprite on the scene's loader; call from `preload`. Keys: `spriteKey(kind, color)` per colour,
  * `rocket-bomb`, `shield`, `card-<card>`. */
 export function loadSprites(
   scene: Phaser.Scene,
@@ -100,16 +114,12 @@ export function loadSprites(
     const url = `data:image/svg+xml;base64,${btoa(svg)}`;
     scene.load.svg(key, url, { width, height });
   };
-  colors.forEach((color, i) => {
-    add(
-      `castle-${i}`,
-      CASTLE_SIZE.width,
-      CASTLE_SIZE.height,
-      castle(css(color)),
-    );
-    add(`launcher-${i}`, LAUNCHER.width, 16, launcher(css(color)));
-    add(`rocket-${i}`, ROCKET.width, 14, rocket(css(color)));
-  });
+  for (const color of new Set(colors)) {
+    const [w, h] = [CASTLE_SIZE.width, CASTLE_SIZE.height];
+    add(spriteKey("castle", color), w, h, castle(css(color)));
+    add(spriteKey("launcher", color), LAUNCHER.width, 16, launcher(css(color)));
+    add(spriteKey("rocket", color), ROCKET.width, 14, rocket(css(color)));
+  }
   add("rocket-bomb", 20, 20, BOMB);
   add("shield", SHIELD_SIZE, SHIELD_SIZE, SHIELD);
   for (const c of CARDS) add(`card-${c}`, 36, 36, card(CARD_ART[c]));
