@@ -377,19 +377,68 @@ function sideBounds(state: RoundState, inset: number): [number, number] {
   return hi > lo ? [lo, hi] : [ARENA_WIDTH / 2 - 1, ARENA_WIDTH / 2 + 1];
 }
 
+type Span = readonly [number, number];
+
+/** `[lo, hi]` minus the open `blocked` spans, as disjoint spans. */
+function freeSpans(lo: number, hi: number, blocked: readonly Span[]): Span[] {
+  let free: Span[] = [[lo, hi]];
+  for (const [a, b] of blocked) {
+    free = free.flatMap(([l, h]): Span[] => {
+      if (b <= l || a >= h) return [[l, h]];
+      const out: Span[] = [];
+      if (a > l) out.push([l, a]);
+      if (b < h) out.push([b, h]);
+      return out;
+    });
+  }
+  return free;
+}
+
+const spanLength = (spans: readonly Span[]): number =>
+  spans.reduce((sum, [l, h]) => sum + h - l, 0);
+
+/** A uniformly random point of `spans` (one RNG draw). */
+function pickIn(state: RoundState, spans: readonly Span[]): number {
+  let u = range(state, 0, spanLength(spans));
+  for (const [l, h] of spans) {
+    if (u <= h - l) return l + u;
+    u -= h - l;
+  }
+  return spans[spans.length - 1]?.[1] ?? ARENA_WIDTH / 2;
+}
+
+/**
+ * Every gate drifts in its own lane `[minX, maxX]`, at least `gateSpacing` from every other live
+ * gate's lane, so two gates never overlap. A lane is at most `1/count` of the sky minus the
+ * spacing, which always leaves room for one more lane. Drifting clear of crates and spawning clear
+ * of castles are preferences, dropped when there is no room.
+ */
 function spawnGate(state: RoundState, lifeFraction = 1): void {
   const t = state.tuning;
   const [leftX, rightX] = sideBounds(state, 130);
-  let x0 = range(state, leftX, rightX);
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const clear =
-      state.gates.every((g) => Math.abs(g.x - x0) > 150) &&
-      state.castles.every((c) => Math.abs(c.x - x0) > 90);
-    if (clear) break;
-    x0 = range(state, leftX, rightX);
-  }
-  const minX = Math.max(leftX, x0 - t.gateDriftRange);
-  const maxX = Math.min(rightX, x0 + t.gateDriftRange);
+  const lanes = state.gates.map((g): Span => [
+    g.minX - t.gateSpacing,
+    g.maxX + t.gateSpacing,
+  ]);
+  const crates = state.crates.map((k): Span => [
+    k.x - k.radius - t.gateWidth,
+    k.x + k.radius + t.gateWidth,
+  ]);
+  const castles = state.castles.map((c): Span => [c.x - 90, c.x + 90]);
+  let free = freeSpans(leftX, rightX, [...lanes, ...crates]);
+  if (spanLength(free) <= 0) free = freeSpans(leftX, rightX, lanes);
+  if (spanLength(free) <= 0) free = [[leftX, rightX]]; // only with extreme tuning
+  let spawnable = free.flatMap(([l, h]) => freeSpans(l, h, castles));
+  if (spanLength(spawnable) <= 0) spawnable = free;
+  const x0 = pickIn(state, spawnable);
+  const lane = free.find(([l, h]) => l <= x0 && x0 <= h) ?? [x0, x0];
+  const count = t.gateCounts[state.castles.length] ?? 3;
+  const half = Math.min(
+    t.gateDriftRange,
+    Math.max(0, (rightX - leftX) / count - t.gateSpacing) / 2,
+  );
+  const minX = Math.max(lane[0], x0 - half);
+  const maxX = Math.min(lane[1], x0 + half);
   const ground = highestGround(
     state.terrain,
     minX - t.gateWidth,

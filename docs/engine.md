@@ -166,7 +166,8 @@ per tick on average (p99 0.7 ms).
   small rounds do not end too fast and big ones not too slow. Direct rocket hit 4; ground explosion within reach of a
   castle deals 50 % splash. Own rockets never hurt their own castle or shield. A dying castle leaves a big crater.
 - **Gates**: 3 (2–3 players) or 4 (4+ players) gates of ×2/×3/×5/×10 (weights 4/3/2/1) drift slowly and bob, live
-  14–22 s and respawn elsewhere. A rocket inside a gate splits into `multiplier` rockets fanned over up to 22°; every
+  14–22 s and respawn elsewhere. Each gate drifts in its own lane, at least `gateSpacing` (80 px) from every other
+  gate's lane, so gates never overlap; a new lane also avoids the crates present when it spawns. A rocket inside a gate splits into `multiplier` rockets fanned over up to 22°; every
   child remembers the gate so a lineage multiplies once per gate.
 - **Rocket cap**: 1500 live rockets. Splits stop creating rockets at 1350 (the remaining 150 are reserved so volleys
   and bombs still appear) and instead multiply the `power` of the rockets that exist, so damage is conserved.
