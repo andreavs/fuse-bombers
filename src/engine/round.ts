@@ -440,7 +440,7 @@ function dropGhostBomb(state: RoundState, g: Ghost): void {
   const t = state.tuning;
   g.reloadTicks = secondsToTicks(t.ghostReload);
   g.reloadTotalTicks = g.reloadTicks;
-  if (state.rockets.length >= t.maxRockets) return;
+  // Ghost bombs bypass `maxRockets`: there are at most a handful, and a press must never be eaten.
   const id = state.nextId++;
   state.rockets.push({
     id,
@@ -474,6 +474,8 @@ function ghostBombHit(
   castleIds: number[],
   damage: number,
 ): void {
+  // Aftermath bombs still carve craters, but gameplay events stop with the round.
+  if (state.phase === "over") return;
   state.events.push({
     type: "ghost-bomb-hit",
     tick: state.tick,

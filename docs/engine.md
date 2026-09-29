@@ -46,7 +46,7 @@ if (round.result) {
   step, i.e. the angle the player was looking at. Once a player's castle is destroyed, the same button drives their
   ghost bomber (see Rules), which drops from where the blimp was _before_ this step when `isGhostLoaded`.
 - After `state.result` is set (`phase === "over"`) `step` keeps moving rockets and carving craters for the aftermath but
-  never fires, damages or changes the result again.
+  never fires, drops ghost bombs, damages (no `hit` or `ghost-bomb-hit`) or changes the result again.
 - `view(state)` returns the same object typed as `RoundView` (deep read-only, without the RNG state and the spawn
   schedule, which would let a bot see the future). Hand render and bots a `RoundView`; only the app loop holds the
   mutable `RoundState`. Everything is plain data, so `structuredClone(state)` works.
@@ -184,7 +184,8 @@ per tick on average (p99 0.7 ms).
   gate's lane, so gates never overlap; a new lane also avoids the crates present when it spawns. A rocket inside a gate splits into `multiplier` rockets fanned over up to 22°; every
   child remembers the gate so a lineage multiplies once per gate.
 - **Rocket cap**: 1500 live rockets. Splits stop creating rockets at 1350 (the remaining 150 are reserved so volleys
-  and bombs still appear) and instead multiply the `power` of the rockets that exist, so damage is conserved.
+  and bombs still appear) and instead multiply the `power` of the rockets that exist, so damage is conserved. Ghost
+  bombs bypass the cap (there are only a few), so a loaded ghost's press always drops one.
 - **Crates**: 2 (3 for 4+ players) floating crates, first at 3 s, respawn 5–9 s. The first rocket to touch one gives its
   owner the card: `unit` +1 rocket per volley, `shield` +50 shield HP (max 100, radius 60), `rapid` reload ×0.75 (min
   1.2 s), `repair` +40 HP, `mega` next volley does ×3 damage with ×2.5 craters. Rockets fly on through crates.

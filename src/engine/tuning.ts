@@ -34,7 +34,7 @@ export interface Tuning {
   rocketRadius: number;
   /** Rockets older than this are removed (safety net; normal rockets land long before). */
   rocketMaxAge: number;
-  /** Hard cap on live rockets (volleys, splits and bombs together). */
+  /** Hard cap on live rockets (volleys, splits and bombs together; ghost bombs bypass it). */
   maxRockets: number;
   /** Gate splits stop creating new rockets above `maxRockets - splitReserve` (they add power instead). */
   splitReserve: number;
