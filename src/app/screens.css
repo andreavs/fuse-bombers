@@ -267,3 +267,9 @@ kbd {
     opacity: 0;
   }
 }
+
+/* The sound toggle is for the lobby and menus; mid-round the HUD owns the bottom edge (pause to reach it). */
+#screen[data-screen="countdown"] ~ .audio-toggle,
+#screen[data-screen="playing"] ~ .audio-toggle {
+  display: none;
+}

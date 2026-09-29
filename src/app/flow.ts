@@ -1,4 +1,5 @@
 import type { RoundView, TickEvent } from "../engine/index.js";
+import type { MusicKind } from "./audio/index.js";
 import { css } from "../render/palette.js";
 import type { PlayerLook, RoundSource } from "../render/round-scene.js";
 import { createBotPlayer } from "./bot.js";
@@ -18,8 +19,14 @@ export interface FlowOptions {
   input: BrowserInput;
   /** The overlay element the screens are drawn into. */
   root: HTMLElement;
-  /** (Re)start the round scene drawing `source` with these player looks. */
-  show(source: RoundSource, players: readonly PlayerLook[]): void;
+  /** (Re)start the round scene drawing `source` with these player looks; `attract` for the bots behind the lobby. */
+  show(
+    source: RoundSource,
+    players: readonly PlayerLook[],
+    attract: boolean,
+  ): void;
+  /** Switch the music track (the round tracks follow the round scene). */
+  music?(kind: MusicKind): void;
   seed: number;
   /** `?speed=N`: run the game and its timers N times as fast (for tests). */
   speed?: number;
@@ -88,6 +95,7 @@ export class Flow implements RoundSource {
             this.runner.match.winner === null
               ? { kind: "results", left: RESULTS }
               : { kind: "winner" };
+        if (this.screen.kind === "winner") this.options.music?.("victory");
       } else if (screen.kind === "results") {
         screen.left -= dt;
         if (screen.left <= 0) this.nextRound();
@@ -209,7 +217,9 @@ export class Flow implements RoundSource {
     this.options.show(
       this,
       seats.map((s) => ({ ...s, tag: "" })),
+      true,
     );
+    this.options.music?.("lobby");
     this.updateTouchZones();
   }
 
@@ -228,7 +238,7 @@ export class Flow implements RoundSource {
     });
     this.screen = { kind: "countdown", left: COUNTDOWN };
     this.paused = false;
-    this.options.show(this, this.seats);
+    this.options.show(this, this.seats, false);
     this.updateTouchZones();
   }
 
