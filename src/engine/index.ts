@@ -21,11 +21,13 @@ export {
   damageScale,
   fuseProgress,
   futureAngle,
+  ghostOf,
+  isGhostLoaded,
   isLoaded,
   step,
   view,
 } from "./round.js";
-export { predictTrajectory } from "./predict.js";
+export { predictGhostBomb, predictTrajectory } from "./predict.js";
 export { BOT_DIFFICULTIES, createBot } from "./bot.js";
 export type { Bot, BotConfig, BotDifficulty } from "./bot.js";
 export type {
@@ -39,6 +41,7 @@ export type { MatchConfig, MatchState } from "./match.js";
 export {
   castleCenter,
   gatePositionAt,
+  ghostPositionAt,
   launcherPivot,
   launchState,
 } from "./geometry.js";
@@ -52,6 +55,8 @@ export type {
   CrateView,
   Gate,
   GateView,
+  Ghost,
+  GhostView,
   Rocket,
   RocketView,
   RoundConfig,

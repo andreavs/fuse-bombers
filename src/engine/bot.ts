@@ -4,8 +4,18 @@
 // ticks later, give or take a difficulty-dependent timing error.
 
 import { castleCenter } from "./geometry.js";
-import { predictTrajectory, type Trajectory } from "./predict.js";
-import { damageScale, futureAngle, isLoaded } from "./round.js";
+import {
+  predictGhostBomb,
+  predictTrajectory,
+  type Trajectory,
+} from "./predict.js";
+import {
+  damageScale,
+  futureAngle,
+  ghostOf,
+  isGhostLoaded,
+  isLoaded,
+} from "./round.js";
 import { hashSeed, int, random, type RngHolder } from "./rng.js";
 import { TICK_HZ, type Card } from "./tuning.js";
 import type { CastleView, RoundView } from "./types.js";
@@ -57,6 +67,8 @@ interface Profile {
   focusWeak: number;
   focusLeader: number;
   grudge: number;
+  /** A ghost drops when its bomb would land within this many px of a castle's centre. */
+  ghostSlack: number;
 }
 
 const PROFILES: Readonly<Record<BotDifficulty, Profile>> = {
@@ -73,6 +85,7 @@ const PROFILES: Readonly<Record<BotDifficulty, Profile>> = {
     focusWeak: 0,
     focusLeader: 0,
     grudge: 0.5,
+    ghostSlack: 70,
   },
   normal: {
     reaction: 15,
@@ -87,6 +100,7 @@ const PROFILES: Readonly<Record<BotDifficulty, Profile>> = {
     focusWeak: 0.5,
     focusLeader: 0.3,
     grudge: 0.3,
+    ghostSlack: 40,
   },
   hard: {
     reaction: 10,
@@ -101,6 +115,7 @@ const PROFILES: Readonly<Record<BotDifficulty, Profile>> = {
     focusWeak: 1.2,
     focusLeader: 0.4,
     grudge: 0.2,
+    ghostSlack: 25,
   },
 };
 
@@ -122,6 +137,7 @@ export function createBot(config: BotConfig): Bot {
   let roundSeed = NaN;
   let lastTick = -1;
   let facing = "";
+  let alive = true;
   let pressAt = -1;
   let loadedAt = -1;
   let wasting = false;
@@ -129,6 +145,38 @@ export function createBot(config: BotConfig): Bot {
   let seen: [number, number][] = [];
   /** The last three raw evaluations, one `thinkEvery` apart. */
   let raw: [number, number][] = [];
+
+  /** An eliminated bot flies its ghost: drop when the bomb would land on or next to a castle. */
+  const playGhost = (view: RoundView): boolean => {
+    const g = ghostOf(view, id);
+    if (!g) return false;
+    const tick = view.tick;
+    if (pressAt >= 0) {
+      if (tick >= pressAt && isGhostLoaded(g)) {
+        pressAt = -1;
+        return true;
+      }
+      if (tick > pressAt + 10) pressAt = -1; // stale plan
+      return false;
+    }
+    if (g.reloadTicks > p.reaction || (tick + id) % p.thinkEvery) return false;
+    const drop = predictGhostBomb(view, id, p.reaction);
+    if (!drop) return false;
+    const { kind, x, y } = drop.impact;
+    const near =
+      kind === "castle" ||
+      kind === "shield" ||
+      (kind === "terrain" &&
+        view.castles.some((c) => {
+          if (!c.alive) return false;
+          const center = castleCenter(c, view.tuning);
+          return Math.hypot(x - center.x, y - center.y) < p.ghostSlack;
+        }));
+    if (!near) return false;
+    const err = int(rng, -p.timingError, p.timingError);
+    pressAt = Math.max(tick + 1, tick + p.reaction + err);
+    return false;
+  };
 
   return (view) => {
     const me = view.castles[id];
@@ -139,14 +187,16 @@ export function createBot(config: BotConfig): Bot {
       roundSeed = view.config.seed;
       rng.rng = hashSeed(hashSeed(config.seed, roundSeed), 7919 + id);
     }
-    if (newRound || me?.facing !== facing) {
+    if (newRound || me?.facing !== facing || me.alive !== alive) {
       facing = me?.facing ?? "";
+      alive = me?.alive ?? false;
       pressAt = loadedAt = -1;
       seen = [];
       raw = [];
     }
-    if (!me || !me.alive || view.result) return false;
+    if (!me || view.result) return false;
     const tick = view.tick;
+    if (!me.alive) return playGhost(view);
 
     if (pressAt >= 0 && tick >= pressAt) {
       if (isLoaded(me)) {

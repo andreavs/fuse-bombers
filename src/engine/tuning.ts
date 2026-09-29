@@ -135,6 +135,23 @@ export interface Tuning {
   bombScatter: readonly [number, number];
   /** All damage is multiplied by 1 + suddenDeathSeconds / damageRampTime. */
   damageRampTime: number;
+
+  // Ghost bombers
+  /** Players whose castle is destroyed fly a ghost blimp that drops bombs. */
+  ghosts: boolean;
+  /** Altitude of the ghost blimps (centre). */
+  ghostY: number;
+  ghostSpeed: number;
+  /** Ghosts bounce this far from the arena edges. */
+  ghostMargin: number;
+  ghostReload: number;
+  /** Delay before a fresh ghost's first bomb. */
+  ghostFirstReload: number;
+  /** Direct-hit damage of a ghost bomb (splash deals `splashFactor` of it). Gates never multiply it. */
+  ghostBombDamage: number;
+  ghostCraterRadius: number;
+  /** Initial downward speed of a dropped bomb. */
+  ghostBombSpeed: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -213,6 +230,16 @@ export const DEFAULT_TUNING: Tuning = {
   bombRampTime: 40,
   bombScatter: [320, 40],
   damageRampTime: 30,
+
+  ghosts: true,
+  ghostY: 64,
+  ghostSpeed: 110,
+  ghostMargin: 40,
+  ghostReload: 3.5,
+  ghostFirstReload: 2.5,
+  ghostBombDamage: 7,
+  ghostCraterRadius: 18,
+  ghostBombSpeed: 60,
 };
 
 export function resolveTuning(overrides?: Partial<Tuning>): Tuning {

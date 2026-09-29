@@ -43,7 +43,8 @@ if (round.result) {
   which is replaced by the next `step`). An app that runs several steps per frame must collect the arrays of every call
   and hand all of them to render and audio, or it drops events. `pressed` is an **edge** per player id; missing entries
   count as `false`. A press only fires when the castle `isLoaded`. It fires at the angle the castle had _before_ this
-  step, i.e. the angle the player was looking at.
+  step, i.e. the angle the player was looking at. Once a player's castle is destroyed, the same button drives their
+  ghost bomber (see Rules), which drops from where the blimp was _before_ this step when `isGhostLoaded`.
 - After `state.result` is set (`phase === "over"`) `step` keeps moving rockets and carving craters for the aftermath but
   never fires, damages or changes the result again.
 - `view(state)` returns the same object typed as `RoundView` (deep read-only, without the RNG state and the spawn
@@ -56,24 +57,26 @@ Draws count for nobody.
 
 ## The view (`RoundView`)
 
-| Field                   | Meaning                                                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tick`                  | Ticks simulated so far.                                                                                                                                             |
-| `phase`                 | `"playing"` → `"sudden-death"` (fuse burnt out) → `"over"`.                                                                                                         |
-| `result`                | `null` or `{ winner: id \| null, reason: "last-standing" \| "wipeout" \| "timeout", tick }`.                                                                        |
-| `fuseTicks`, `maxTicks` | Fuse length (90 s) and hard stop (180 s). `fuseProgress(view)` gives 0..1 for the fuse bar.                                                                         |
-| `terrain`               | `surface[column]` = y of the ground top per 1-px column (solid below). `version` bumps on change; `bedrock` is indestructible.                                      |
-| `castles[id]`           | See below. `id` = player index, castles ordered left to right.                                                                                                      |
-| `rockets[]`             | `{ id, owner, x, y, vx, vy, power, mega, bomb, gates, age }`. `owner` −1 = sudden-death bomb. `power` > 1 when the cap merged split children into it (draw bigger). |
-| `gates[]`               | `{ id, multiplier, x, y, width, height, spawnTick, expireTick, … }` axis-aligned rectangle centred on `x, y`.                                                       |
-| `crates[]`              | `{ id, card, x, y, radius, spawnTick }`. Cards: `unit`, `shield`, `rapid`, `repair`, `mega`.                                                                        |
-| `tuning`                | The resolved `Tuning` (castle size, shield radius, reload, … everything the renderer needs).                                                                        |
+| Field                   | Meaning                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tick`                  | Ticks simulated so far.                                                                                                                                                  |
+| `phase`                 | `"playing"` → `"sudden-death"` (fuse burnt out) → `"over"`.                                                                                                              |
+| `result`                | `null` or `{ winner: id \| null, reason: "last-standing" \| "wipeout" \| "timeout", tick }`.                                                                             |
+| `fuseTicks`, `maxTicks` | Fuse length (90 s) and hard stop (180 s). `fuseProgress(view)` gives 0..1 for the fuse bar.                                                                              |
+| `terrain`               | `surface[column]` = y of the ground top per 1-px column (solid below). `version` bumps on change; `bedrock` is indestructible.                                           |
+| `castles[id]`           | See below. `id` = player index, castles ordered left to right.                                                                                                           |
+| `rockets[]`             | `{ id, owner, x, y, vx, vy, power, mega, bomb, ghost, gates, age }`. `owner` −1 = sudden-death bomb; `ghost`: from `owner`'s ghost. `power` > 1 if capped (draw bigger). |
+| `gates[]`               | `{ id, multiplier, x, y, width, height, spawnTick, expireTick, … }` axis-aligned rectangle centred on `x, y`.                                                            |
+| `crates[]`              | `{ id, card, x, y, radius, spawnTick }`. Cards: `unit`, `shield`, `rapid`, `repair`, `mega`.                                                                             |
+| `ghosts[]`              | Ghost bombers of eliminated players: `{ owner, x, y, vx, reloadTicks, reloadTotalTicks, … }`, in the order they fell. `ghostOf(view, id)` finds one.                     |
+| `tuning`                | The resolved `Tuning` (castle size, shield radius, reload, … everything the renderer needs).                                                                             |
 
 Castle fields: `x, y` (ground contact, bottom centre), `hp / maxHp`, `alive`, `angle`, `arcMin / arcMax`, `sweepDir`,
 `facing` (`"left" | "right" | "both"`), `reloadTicks / reloadTotalTicks` (reload ring), `units` (rockets per volley),
 `shieldHp`, `megaReady`, `volleyLeft` (rockets still to leave the barrel), and `stats` (volleys, rocketsFired,
-damageDealt, kills, gateSplits, crates) for an end-of-round screen. Geometry helpers: `castleCenter(c, tuning)` (hit
-circle and shield centre), `launcherPivot(c, tuning)`, `launchState(c, tuning, angle)`.
+damageDealt, kills, gateSplits, crates, ghostBombs, ghostDamage) for an end-of-round screen. `damageDealt` and `kills`
+include what the player's ghost did. Geometry helpers: `castleCenter(c, tuning)` (hit circle and shield centre),
+`launcherPivot(c, tuning)`, `launchState(c, tuning, angle)`.
 
 ## Events (`TickEvent`, discriminated on `type`)
 
@@ -87,7 +90,10 @@ Every event carries the `tick` that produced it. `step` returns one tick's event
 | `shield-popped`                 | `castleId`.                                                                               |
 | `crater`                        | `owner, x, y, radius, x0, x1` (changed columns, inclusive). Can be many per tick.         |
 | `rocket-exploded`               | `owner, x, y, cause` — blew up without a crater (`"ground"` on bedrock, or `"expired"`).  |
-| `castle-destroyed`              | `castleId, by, x, y` (`by` −1 = bomb).                                                    |
+| `castle-destroyed`              | `castleId, by, x, y` (`by` −1 = bomb). Then `ghost-spawned` for that player.              |
+| `ghost-spawned`                 | `owner, x, y` — the blimp appears above the wreck.                                        |
+| `ghost-bomb-dropped`            | `owner, rocketId, x, y` — the bomb is `rockets[]` entry `rocketId` (`ghost: true`).       |
+| `ghost-bomb-hit`                | `owner, rocketId, x, y, castleIds, damage` — it blew up (also a `hit` / `crater`).        |
 | `crate-spawned`                 | `crateId, card, x, y`.                                                                    |
 | `crate-taken`                   | `crateId, card, castleId, x, y`.                                                          |
 | `gate-spawned` / `gate-expired` | `gateId` (+ `multiplier` on spawn).                                                       |
@@ -107,6 +113,10 @@ and shields, current terrain), without the per-rocket random spread. Returns:
 `futureAngle(view, castleId, ticks)` gives the launcher angle `ticks` steps from now (the sweep is deterministic), so a
 bot with reaction time R can evaluate `predictTrajectory(view, id, futureAngle(view, id, R))` and press R ticks early.
 Bots get no other privileged information. Gate motion is also a pure function: `gatePositionAt(gate, tick)`.
+
+Ghosts: `ghostPositionAt(ghost, tick)` gives the blimp's `{ x, y, vx }` at any tick, and `predictGhostBomb(view, owner,
+ticks = 0)` returns a `Trajectory` (empty `gates`/`crates`) for a bomb dropped `ticks` steps from now, or null without a
+ghost. The renderer can use it for a drop guide.
 
 ## Bots
 
@@ -137,6 +147,10 @@ and scores it: a hit on an opponent, weighted towards the weakest castle, the le
 partly; gate multipliers multiply the value and crates add to it. Each score is smoothed with its neighbouring angles
 (timing is never exact), and once loaded the bot presses when a shot is close to the best of the last sweep, relaxing
 its standards the longer it waits. The press lands up to `timingError` ticks early or late.
+
+An eliminated bot flies its ghost: when loaded it predicts the drop `reaction` ticks ahead with `predictGhostBomb` and
+presses (with the same timing error) when the bomb would hit a castle or land within `ghostSlack` of one (easy 70 px,
+normal 40, hard 25).
 
 | Difficulty | Timing error | Thinks every | Other                                                  |
 | ---------- | ------------ | ------------ | ------------------------------------------------------ |
@@ -177,6 +191,22 @@ per tick on average (p99 0.7 ms).
 - **Fuse**: 90 s. Then sudden death: bombs (6 damage) fall near random living castles, from one per second to ten per
   second over 40 s, scattering less and less; all damage scales by `1 + suddenDeathSeconds / 30`. Bombs can be
   multiplied by gates too. At 180 s the round is decided on HP (tie = draw).
+- **Ghost bombers** (`ghosts: true`): a destroyed castle's player gets a blimp at y 64 above the wreck. It drifts toward
+  the middle at 110 px/s and bounces 40 px from the arena edges. Pressing drops a bomb (first after 2.5 s, then every
+  3.5 s) that starts at 60 px/s downward with the blimp's `vx`. It deals 7 on a direct hit (a third of a 5-rocket
+  volley, times the sudden-death scale; splash half), carves an 18 px crater, is never multiplied by gates and never
+  takes crates. Ghosts cannot win: the round still ends when ≤ 1 castle stands, and they stop dropping once it is over.
+
+Ghosts measured headlessly (bots only, all on one difficulty, seeds 1..20 per player count, the same seeds with
+`ghosts: false`). Median round length without → with ghosts, and the ghosts' share of all damage (incl. sudden-death
+bombs). 2-player rounds are unchanged (the first kill ends them). Rounds mostly get shorter because ghosts cut the
+sudden-death tail (p90 never rose); none hit the 180 s stop.
+
+| Bots   | 3p               | 4p               | 5p                | 6p                |
+| ------ | ---------------- | ---------------- | ----------------- | ----------------- |
+| easy   | 126 → 124 s, 3 % | 117 → 110 s, 8 % | 114 → 107 s, 13 % | 115 → 105 s, 10 % |
+| normal | 89 → 88 s, 4 %   | 77 → 80 s, 11 %  | 98 → 64 s, 11 %   | 95 → 79 s, 13 %   |
+| hard   | 41 → 48 s, 2 %   | 50 → 42 s, 6 %   | 66 → 51 s, 10 %   | 57 → 47 s, 7 %    |
 
 Headless tuning with these defaults (30–60 seeds per player count; `tests/engine-balance.test.ts` asserts a smaller
 version). The "decent aimer" looks 8 ticks ahead with `futureAngle` + `predictTrajectory`, presses when the shot would

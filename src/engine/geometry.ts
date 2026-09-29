@@ -1,7 +1,7 @@
 // Small pure helpers shared by the simulation and the trajectory predictor.
 
 import { DT, SUBSTEPS, type Tuning } from "./tuning.js";
-import type { Facing, GateView, Vec2 } from "./types.js";
+import type { Facing, GateView, GhostView, Vec2 } from "./types.js";
 
 /** Anything with a ground contact point (a castle, or a spot a castle might stand on). */
 type Grounded = Readonly<Vec2>;
@@ -83,6 +83,26 @@ export function gatePositionAt(g: GateView, tick: number): Vec2 {
     g.bobAmp *
       Math.sin(g.bobPhase + (2 * Math.PI * elapsed) / g.bobPeriodTicks);
   return { x, y };
+}
+
+/**
+ * Ghost blimp centre and velocity at an absolute tick: constant speed, bouncing between `minX` and
+ * `maxX` (a fixed, input-independent path like the gates').
+ */
+export function ghostPositionAt(
+  g: GhostView,
+  tick: number,
+): { x: number; y: number; vx: number } {
+  const span = g.maxX - g.minX;
+  const u = g.x0 - g.minX + g.speed * (tick - g.spawnTick) * DT;
+  const m = span > 0 ? ((u % (2 * span)) + 2 * span) % (2 * span) : 0;
+  // On the first half of the triangle x follows u; at a turning point, look where u is heading.
+  const withU = g.speed >= 0 ? m < span : m > 0 && m <= span;
+  return {
+    x: g.minX + triangle(u, span),
+    y: g.y,
+    vx: withU ? g.speed : -g.speed,
+  };
 }
 
 export function insideGate(

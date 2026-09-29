@@ -45,6 +45,7 @@ export function fingerprint(state: RoundState): string {
     rockets: state.rockets.map((r) => [r.id, r.x, r.y, r.vx, r.vy, r.power]),
     gates: state.gates.map((g) => [g.id, g.x, g.y, g.multiplier]),
     crates: state.crates.map((k) => [k.id, k.x, k.y, k.card]),
+    ghosts: state.ghosts,
   });
 }
 
@@ -90,6 +91,7 @@ export function addRocket(
     power: 1,
     mega: false,
     bomb: false,
+    ghost: false,
     gates: [],
     age: 0,
     ...rocket,

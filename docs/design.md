@@ -31,6 +31,10 @@ turn into huge swarms that chew through mountains, shields and walls.
 - **The fuse.** A burning fuse across the top of the screen is the round timer (~90 s). When it burns out, sudden
   death starts: bombs rain from the sky and damage escalates until one castle remains, so a round never exceeds 3
   minutes. Last castle standing wins the round; a simultaneous wipe-out is a draw.
+- **Ghost bombers.** A player whose castle is destroyed keeps playing: they fly a small ghost blimp that drifts back
+  and forth along the top of the arena, and the same button drops a bomb straight down every few seconds. A bomb does
+  about a third of a plain volley, ignores gates and crates, and is enough to tip a close fight but not to decide the
+  round. Ghosts cannot win; the round still ends when one castle is left.
 
 ## Players and controls
 

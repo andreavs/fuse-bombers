@@ -19,6 +19,9 @@ export interface CastleStats {
   kills: number;
   gateSplits: number;
   crates: number;
+  /** Bombs dropped by this player's ghost, and the damage they dealt (included in `damageDealt`). */
+  ghostBombs: number;
+  ghostDamage: number;
 }
 
 export interface Castle {
@@ -71,11 +74,38 @@ export interface Rocket {
   /** Damage multiplier; > 1 when the rocket cap merged split children into it. */
   power: number;
   mega: boolean;
+  /** A sudden-death bomb (owner -1). */
   bomb: boolean;
+  /** A ghost bomb, dropped by `owner`'s ghost: no gate splits, no crates. */
+  ghost: boolean;
   /** Ids of gates this rocket's lineage already passed (each gate multiplies a lineage once). */
   gates: readonly number[];
   /** Ticks since launch. */
   age: number;
+}
+
+/**
+ * A ghost bomber: the blimp a player flies after their castle is destroyed. It drifts at a constant
+ * speed along the top of the arena, bouncing between `minX` and `maxX`, and drops a bomb straight
+ * down (inheriting `vx`) when its button is pressed while loaded.
+ */
+export interface Ghost {
+  /** Player id (== the destroyed castle's id). */
+  owner: number;
+  /** Current centre. */
+  x: number;
+  y: number;
+  /** Current horizontal velocity (px/s); the sign is the drift direction. */
+  vx: number;
+  reloadTicks: number;
+  reloadTotalTicks: number;
+  /** First tick the ghost is in play (it is at `x0` when that step starts). */
+  spawnTick: number;
+  /** Motion parameters; see `ghostPositionAt`. */
+  x0: number;
+  speed: number;
+  minX: number;
+  maxX: number;
 }
 
 export interface Gate {
@@ -215,6 +245,29 @@ export type TickEvent =
       x: number;
       y: number;
     }
+  | { type: "ghost-spawned"; tick: number; owner: number; x: number; y: number }
+  | {
+      type: "ghost-bomb-dropped";
+      tick: number;
+      owner: number;
+      rocketId: number;
+      x: number;
+      y: number;
+    }
+  | {
+      /**
+       * A ghost bomb blew up (on a castle, a shield or the ground; also reported as `hit` / `crater`).
+       * `castleIds` are the castles it damaged, `damage` the total. Bombs that leave the arena vanish.
+       */
+      type: "ghost-bomb-hit";
+      tick: number;
+      owner: number;
+      rocketId: number;
+      x: number;
+      y: number;
+      castleIds: number[];
+      damage: number;
+    }
   | { type: "gate-spawned"; tick: number; gateId: number; multiplier: number }
   | { type: "gate-expired"; tick: number; gateId: number }
   | { type: "sudden-death-started"; tick: number }
@@ -245,6 +298,8 @@ export interface RoundState {
   rockets: Rocket[];
   gates: Gate[];
   crates: Crate[];
+  /** Ghost bombers of eliminated players, in the order their castles fell. */
+  ghosts: Ghost[];
   /** Events produced by the most recent `step` (cleared at the start of each step). */
   events: TickEvent[];
   /** Tick at which the next crate may spawn. */
@@ -275,4 +330,5 @@ export type CastleView = DeepReadonly<Castle>;
 export type RocketView = DeepReadonly<Rocket>;
 export type GateView = DeepReadonly<Gate>;
 export type CrateView = DeepReadonly<Crate>;
+export type GhostView = DeepReadonly<Ghost>;
 export type TerrainView = DeepReadonly<Terrain>;
