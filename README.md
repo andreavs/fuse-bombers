@@ -19,8 +19,10 @@ handful into a swarm.
   faster reload, a repair or a mega bomb.
 - **Terrain.** Every rocket carves a crater, so the peaks between the castles wear away over the round.
 - **The fuse.** The burning fuse across the top is the round timer (90 s). When it burns out, sudden death begins:
-  bombs rain down and damage keeps growing until one castle is left, so a round never lasts past 3 minutes.
-- **Winning.** The last castle standing wins the round (a wipe-out is a draw). First to N round wins takes the match;
+  bombs rain down and damage keeps growing. At 3 minutes the round ends on HP: the castle with the most HP wins, and
+  a tie is a draw.
+- **Winning.** The last castle standing wins the round (a wipe-out is a draw); if more than one is still standing at
+  3 minutes, the highest HP wins (a tie is a draw). First to N round wins takes the match;
   N is 3 by default and set in the lobby (up to 9).
 
 ## Controls
