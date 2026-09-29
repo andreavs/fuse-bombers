@@ -5,6 +5,7 @@
 import {
   crateYAt,
   gatePositionAt,
+  ghostPositionAt,
   insideGate,
   integrate,
   isOffscreen,
@@ -138,4 +139,52 @@ export function predictTrajectory(
     gates,
     crates,
   };
+}
+
+/**
+ * Predicts where player `owner`'s ghost bomb would land if its button were pressed `ticks` steps
+ * from now (0 = on the next `step`), from the ghost's deterministic path and the current terrain
+ * and castles. Bombs ignore gates and crates, so `gates` and `crates` are always empty. Returns
+ * null when the player has no ghost.
+ */
+export function predictGhostBomb(
+  state: RoundView,
+  owner: number,
+  ticks = 0,
+  maxTicks = 300,
+): Trajectory | null {
+  const g = state.ghosts.find((h) => h.owner === owner);
+  if (!g) return null;
+  const t = state.tuning;
+  const start = state.tick + ticks;
+  const p = ghostPositionAt(g, start);
+  const r = { x: p.x, y: p.y, vx: p.vx, vy: t.ghostBombSpeed };
+  const points: Vec2[] = [{ x: r.x, y: r.y }];
+  const halfH = t.castleHeight / 2;
+  const shieldR = t.shieldRadius + t.rocketRadius;
+  const castleR = t.castleRadius + t.rocketRadius;
+  const done = (kind: ImpactKind, k: number, castleId: number | null) => {
+    points.push({ x: r.x, y: r.y });
+    const impact = { kind, x: r.x, y: r.y, tick: k, castleId };
+    return { points, impact, gates: [], crates: [] };
+  };
+  for (let k = 1; k <= maxTicks; k++) {
+    for (let s = 0; s < SUBSTEPS; s++) {
+      integrate(r, t.gravity);
+      if (isOffscreen(r.x, r.y, state.terrain.width, state.terrain.height))
+        return done("offscreen", k, null);
+      for (const c of state.castles) {
+        if (!c.alive || c.id === owner) continue;
+        const dx = r.x - c.x;
+        const dy = r.y - (c.y - halfH);
+        const d2 = dx * dx + dy * dy;
+        if (c.shieldHp > 0 && d2 < shieldR * shieldR)
+          return done("shield", k, c.id);
+        if (d2 < castleR * castleR) return done("castle", k, c.id);
+      }
+      if (r.y >= surfaceAt(state.terrain, r.x)) return done("terrain", k, null);
+    }
+    points.push({ x: r.x, y: r.y });
+  }
+  return done("timeout", maxTicks, null);
 }

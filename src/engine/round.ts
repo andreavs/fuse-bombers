@@ -6,6 +6,7 @@ import {
   crateYAt,
   DEG,
   gatePositionAt,
+  ghostPositionAt,
   insideGate,
   integrate,
   isOffscreen,
@@ -37,6 +38,8 @@ import type {
   CastleView,
   Crate,
   Gate,
+  Ghost,
+  GhostView,
   RoundConfig,
   RoundResult,
   RoundState,
@@ -46,6 +49,7 @@ import type {
 } from "./types.js";
 
 const NO_GATES: readonly number[] = [];
+const NO_GATE_LIST: readonly Gate[] = [];
 
 // ---------------------------------------------------------------------------------------------
 // Creation
@@ -94,6 +98,8 @@ export function createRound(config: RoundConfig): RoundState {
       kills: 0,
       gateSplits: 0,
       crates: 0,
+      ghostBombs: 0,
+      ghostDamage: 0,
     },
   }));
 
@@ -110,6 +116,7 @@ export function createRound(config: RoundConfig): RoundState {
     rockets: [],
     gates: [],
     crates: [],
+    ghosts: [],
     events: [],
     nextCrateTick: secondsToTicks(tuning.firstCrateDelay),
     nextBombTick: 0,
@@ -172,6 +179,19 @@ export function isLoaded(c: CastleView): boolean {
   return c.alive && c.reloadTicks === 0 && c.volleyLeft === 0;
 }
 
+/** The ghost bomber of player `owner`, if their castle has been destroyed. */
+export function ghostOf(
+  state: RoundView,
+  owner: number,
+): GhostView | undefined {
+  return state.ghosts.find((g) => g.owner === owner);
+}
+
+/** True when the ghost would drop a bomb if its button were pressed this tick. */
+export function isGhostLoaded(g: GhostView): boolean {
+  return g.reloadTicks === 0;
+}
+
 /** Fuse progress in [0, 1] (1 = burnt out, sudden death). */
 export function fuseProgress(state: RoundView): number {
   return Math.min(1, state.tick / Math.max(1, state.fuseTicks));
@@ -206,6 +226,7 @@ export function step(
   }
 
   updateCastles(state, pressed);
+  updateGhosts(state, pressed);
   updateGates(state);
   updateCrates(state);
   if (state.phase === "sudden-death") dropBombs(state);
@@ -341,6 +362,7 @@ function launchRocket(state: RoundState, c: Castle): void {
     power: 1,
     mega: c.volleyMega,
     bomb: false,
+    ghost: false,
     gates: NO_GATES,
     age: 0,
   });
@@ -364,6 +386,104 @@ function settleCastles(state: RoundState): void {
       c.fallSpeed = 0;
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Ghost bombers
+
+function spawnGhost(state: RoundState, c: Castle): void {
+  const t = state.tuning;
+  if (!t.ghosts || state.ghosts.some((g) => g.owner === c.id)) return;
+  const minX = t.ghostMargin;
+  const maxX = ARENA_WIDTH - t.ghostMargin;
+  const x0 = Math.min(maxX, Math.max(minX, c.x));
+  const reload = secondsToTicks(t.ghostFirstReload);
+  const ghost: Ghost = {
+    owner: c.id,
+    x: x0,
+    y: t.ghostY,
+    vx: 0,
+    reloadTicks: reload,
+    reloadTotalTicks: reload,
+    // It is at `x0` when the next step starts (see `ghostPositionAt`).
+    spawnTick: state.tick + 1,
+    x0,
+    // Head for the middle of the arena first.
+    speed: x0 < ARENA_WIDTH / 2 ? t.ghostSpeed : -t.ghostSpeed,
+    minX,
+    maxX,
+  };
+  ghost.vx = ghost.speed;
+  state.ghosts.push(ghost);
+  state.events.push({
+    type: "ghost-spawned",
+    tick: state.tick,
+    owner: c.id,
+    x: ghost.x,
+    y: ghost.y,
+  });
+}
+
+function updateGhosts(state: RoundState, pressed: readonly boolean[]): void {
+  for (const g of state.ghosts) {
+    // Drop from where the player saw the blimp (its position after the previous tick).
+    if (state.phase !== "over" && pressed[g.owner] === true && isGhostLoaded(g))
+      dropGhostBomb(state, g);
+    const p = ghostPositionAt(g, state.tick + 1);
+    g.x = p.x;
+    g.vx = p.vx;
+    if (g.reloadTicks > 0) g.reloadTicks--;
+  }
+}
+
+function dropGhostBomb(state: RoundState, g: Ghost): void {
+  const t = state.tuning;
+  g.reloadTicks = secondsToTicks(t.ghostReload);
+  g.reloadTotalTicks = g.reloadTicks;
+  if (state.rockets.length >= t.maxRockets) return;
+  const id = state.nextId++;
+  state.rockets.push({
+    id,
+    owner: g.owner,
+    x: g.x,
+    y: g.y,
+    vx: g.vx,
+    vy: t.ghostBombSpeed,
+    power: 1,
+    mega: false,
+    bomb: false,
+    ghost: true,
+    gates: NO_GATES,
+    age: 0,
+  });
+  const owner = state.castles[g.owner];
+  if (owner) owner.stats.ghostBombs++;
+  state.events.push({
+    type: "ghost-bomb-dropped",
+    tick: state.tick,
+    owner: g.owner,
+    rocketId: id,
+    x: g.x,
+    y: g.y,
+  });
+}
+
+function ghostBombHit(
+  state: RoundState,
+  r: Rocket,
+  castleIds: number[],
+  damage: number,
+): void {
+  state.events.push({
+    type: "ghost-bomb-hit",
+    tick: state.tick,
+    owner: r.owner,
+    rocketId: r.id,
+    x: r.x,
+    y: r.y,
+    castleIds,
+    damage,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -614,6 +734,7 @@ function dropBombs(state: RoundState): void {
     power: 1,
     mega: false,
     bomb: true,
+    ghost: false,
     gates: NO_GATES,
     age: 0,
   });
@@ -624,7 +745,11 @@ function dropBombs(state: RoundState): void {
 
 function rocketDamage(state: RoundState, r: Rocket): number {
   const t = state.tuning;
-  const base = r.bomb ? t.bombDamage : t.rocketDamage;
+  const base = r.ghost
+    ? t.ghostBombDamage
+    : r.bomb
+      ? t.bombDamage
+      : t.rocketDamage;
   return (
     base * r.power * (r.mega ? t.megaDamageFactor : 1) * damageScale(state)
   );
@@ -669,28 +794,13 @@ function simulateRocket(
       const dx = r.x - c.x;
       const dy = r.y - (c.y - halfH);
       const d2 = dx * dx + dy * dy;
-      if (c.shieldHp > 0 && d2 < shieldR * shieldR) {
-        damageCastle(
-          state,
-          c,
-          rocketDamage(state, r),
-          r.owner,
-          r.x,
-          r.y,
-          false,
-        );
-        return false;
-      }
-      if (d2 < castleR * castleR) {
-        damageCastle(
-          state,
-          c,
-          rocketDamage(state, r),
-          r.owner,
-          r.x,
-          r.y,
-          false,
-        );
+      if (
+        (c.shieldHp > 0 && d2 < shieldR * shieldR) ||
+        d2 < castleR * castleR
+      ) {
+        const damage = rocketDamage(state, r);
+        const dealt = damageCastle(state, c, damage, r, r.x, r.y, false);
+        if (r.ghost) ghostBombHit(state, r, dealt ? [c.id] : [], dealt);
         return false;
       }
     }
@@ -700,13 +810,13 @@ function simulateRocket(
       return false;
     }
 
-    for (const g of state.gates) {
+    for (const g of r.ghost ? NO_GATE_LIST : state.gates) {
       if (insideGate(g.x, g.y, g, r.x, r.y) && !r.gates.includes(g.id)) {
         splitRocket(state, r, g, born, liveCount);
       }
     }
 
-    if (r.owner >= 0 && state.phase !== "over") {
+    if (r.owner >= 0 && !r.ghost && state.phase !== "over") {
       for (let k = 0; k < state.crates.length; k++) {
         const crate = state.crates[k];
         if (!crate) continue;
@@ -801,6 +911,7 @@ function splitRocket(
       power: r.power,
       mega: r.mega,
       bomb: r.bomb,
+      ghost: r.ghost,
       gates: r.gates,
       age: r.age,
     });
@@ -809,22 +920,29 @@ function splitRocket(
 
 function explode(state: RoundState, r: Rocket): void {
   const t = state.tuning;
-  const base = r.bomb
-    ? t.bombCraterRadius
-    : t.craterRadius * (r.mega ? t.megaCraterFactor : 1);
+  const base = r.ghost
+    ? t.ghostCraterRadius
+    : r.bomb
+      ? t.bombCraterRadius
+      : t.craterRadius * (r.mega ? t.megaCraterFactor : 1);
   const radius = base * Math.min(2.5, Math.sqrt(r.power));
   if (!crater(state, r.x, r.y, radius, r.owner))
     rocketExploded(state, r, "ground");
   const reach = radius + t.castleRadius;
   const damage = rocketDamage(state, r) * t.splashFactor;
+  const hits: number[] = [];
+  let dealt = 0;
   for (const c of state.castles) {
     if (!c.alive || c.id === r.owner) continue;
     const center = castleCenter(c, t);
     const dx = r.x - center.x;
     const dy = r.y - center.y;
-    if (dx * dx + dy * dy < reach * reach)
-      damageCastle(state, c, damage, r.owner, r.x, r.y, true);
+    if (dx * dx + dy * dy >= reach * reach) continue;
+    const d = damageCastle(state, c, damage, r, r.x, r.y, true);
+    if (d > 0) hits.push(c.id);
+    dealt += d;
   }
+  if (r.ghost) ghostBombHit(state, r, hits, dealt);
 }
 
 function rocketExploded(
@@ -865,18 +983,23 @@ function crater(
   return true;
 }
 
+/** Damages a castle with rocket `r`'s explosion; returns the damage dealt (0 when it had no effect). */
 function damageCastle(
   state: RoundState,
   c: Castle,
   amount: number,
-  owner: number,
+  r: Rocket,
   x: number,
   y: number,
   splash: boolean,
-): void {
-  if (state.phase === "over" || !c.alive || amount <= 0) return;
+): number {
+  if (state.phase === "over" || !c.alive || amount <= 0) return 0;
+  const owner = r.owner;
   const attacker = owner >= 0 ? state.castles[owner] : undefined;
-  if (attacker) attacker.stats.damageDealt += amount;
+  if (attacker) {
+    attacker.stats.damageDealt += amount;
+    if (r.ghost) attacker.stats.ghostDamage += amount;
+  }
   const base = {
     type: "hit" as const,
     tick: state.tick,
@@ -895,12 +1018,12 @@ function damageCastle(
         tick: state.tick,
         castleId: c.id,
       });
-    return;
+    return amount;
   }
   c.hp = Math.max(0, c.hp - amount);
   c.lastHitBy = owner;
   state.events.push({ ...base, damage: amount, shielded: false });
-  if (c.hp > 0) return;
+  if (c.hp > 0) return amount;
 
   c.alive = false;
   c.shieldHp = 0;
@@ -915,6 +1038,8 @@ function damageCastle(
     y: c.y,
   });
   crater(state, c.x, c.y - 8, state.tuning.wreckCraterRadius, owner);
+  spawnGhost(state, c);
+  return amount;
 }
 
 // ---------------------------------------------------------------------------------------------

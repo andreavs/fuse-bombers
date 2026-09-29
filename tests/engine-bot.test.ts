@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createBot,
+  ghostOf,
+  isGhostLoaded,
   isLoaded,
   TICK_HZ,
   type BotDifficulty,
@@ -23,8 +25,12 @@ function botInputs(seed: number, kinds: readonly BotDifficulty[]) {
       const press = bot(state);
       if (press) {
         log.presses++;
-        if (!isLoaded(state.castles[id] ?? state.castles[0]!))
-          log.pressedWhileBusy++;
+        // An eliminated bot presses for its ghost bomber.
+        const ghost = ghostOf(state, id);
+        const ready = ghost
+          ? isGhostLoaded(ghost)
+          : isLoaded(state.castles[id] ?? state.castles[0]!);
+        if (!ready) log.pressedWhileBusy++;
       }
       return press;
     });
@@ -62,7 +68,10 @@ test("bots only press when loaded, and fire regularly", () => {
     const { inputs, log } = botInputs(5, [difficulty, difficulty, difficulty]);
     const s = playOut({ seed: 5, playerCount: 3 }, inputs);
     assert.equal(log.pressedWhileBusy, 0, `${difficulty} pressed while busy`);
-    const volleys = s.castles.reduce((n, c) => n + c.stats.volleys, 0);
+    const volleys = s.castles.reduce(
+      (n, c) => n + c.stats.volleys + c.stats.ghostBombs,
+      0,
+    );
     assert.equal(volleys, log.presses, `${difficulty}: a press did not fire`);
     // Reload is 2.6 s; a purposeful bot still fires at least every ~6 s on average.
     for (const c of s.castles.filter((c) => c.alive)) {
