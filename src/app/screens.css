@@ -255,6 +255,15 @@ kbd {
   bottom: auto;
   top: 5.8cqw;
 }
+/* Touch players pause with a corner button (keyboards have Esc, pads Start). */
+#screen button.pause {
+  position: absolute;
+  top: 2.6cqw; /* Below the fuse and its bomb. */
+  right: 0.8cqw;
+  pointer-events: auto;
+  font-size: 1.4cqw;
+  padding: 1cqw 1.4cqw;
+}
 
 @keyframes blink {
   50% {

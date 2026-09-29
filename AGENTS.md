@@ -36,6 +36,7 @@ pnpm build          # tsc --noEmit && vite build (this is also the type check)
 pnpm test           # tsx --test tests/*.test.ts
 pnpm lint           # eslint (small type-aware rule set)
 pnpm format         # prettier --write . ; CI runs format:check
+pnpm flow-check     # Playwright: lobby → match → pause → winner → play again → lobby (local only, needs Chromium)
 ```
 
 Conventions: TypeScript strict with `noUncheckedIndexedAccess`; relative imports use the `.js` extension

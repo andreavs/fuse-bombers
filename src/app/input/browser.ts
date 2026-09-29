@@ -29,16 +29,20 @@ export function createBrowserInput(
   const press = hub.press.bind(hub);
   hub.addSource(attachKeyboard(win, press));
   hub.addSource(
-    attachGamepads((): readonly (GamepadLike | null)[] => {
-      try {
-        return typeof win.navigator.getGamepads === "function"
-          ? win.navigator.getGamepads()
-          : [];
-      } catch {
-        // A permissions policy can forbid gamepads; then there simply are none.
-        return [];
-      }
-    }, press),
+    attachGamepads(
+      (): readonly (GamepadLike | null)[] => {
+        try {
+          return typeof win.navigator.getGamepads === "function"
+            ? win.navigator.getGamepads()
+            : [];
+        } catch {
+          // A permissions policy can forbid gamepads; then there simply are none.
+          return [];
+        }
+      },
+      press,
+      hub.command.bind(hub),
+    ),
   );
 
   const touchEnabled =

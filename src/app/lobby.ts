@@ -49,6 +49,22 @@ export class Lobby {
     return { slot, joined: true };
   }
 
+  /**
+   * Renumber the seated touch zones 0, 1, 2… in their left-to-right order, so a match has no blank zone where a
+   * touch player left the lobby. Zone i is the device `touch:i`.
+   */
+  compactTouchZones(): void {
+    const zone = (d: DeviceId | undefined) =>
+      d?.startsWith("touch:") ? Number(d.slice(6)) : -1;
+    const touch = this.devices
+      .map((device, slot) => ({ slot, zone: zone(device) }))
+      .filter((s) => s.zone >= 0)
+      .sort((a, b) => a.zone - b.zone);
+    touch.forEach(({ slot }, i) => {
+      this.devices[slot] = `touch:${i}`;
+    });
+  }
+
   /** The smallest player count that keeps every seated human in the match. */
   get minPlayers(): number {
     let count = MIN_PLAYERS;
