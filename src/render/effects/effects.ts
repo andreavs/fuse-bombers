@@ -10,6 +10,7 @@ import {
 import * as art from "../art.js";
 import { css, gateColor, playerColor, THEMES } from "../palette.js";
 import { DEPTH, ROUND_EVENTS, ROUND_START } from "../round-scene.js";
+import { addHit, driftY, TALLY_RISE, type TallyState } from "./tally.js";
 import { addFxTextures } from "./textures.js";
 
 type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
@@ -22,7 +23,7 @@ type Visual = Phaser.GameObjects.Image | Phaser.GameObjects.Text;
 const BUDGET = { smoke: 2000, fire: 700, debris: 500 } as const;
 /** Mean smoke puff life (ms); with the budget it sets how many puffs a frame may add. */
 const SMOKE_LIFE = 1300;
-/** Most crater and hit bursts drawn per frame; the rest merge into their neighbours. */
+/** Most crater bursts drawn per frame; the rest are dropped (nearby craters already merge into one burst). */
 const MAX_BURSTS = 16;
 /** Largest shake offset in px, reached at full trauma. */
 const SHAKE_PX = 12;
@@ -48,6 +49,8 @@ interface Fx {
   /** Fraction of the life before the fade starts. */
   hold: number;
   vy: number;
+  /** Where the drift starts: the object sits at `y0 + vy * age`, so resetting `age` puts it back. */
+  y0: number;
   fly?: { x0: number; y0: number; x1: number; y1: number };
 }
 
@@ -68,10 +71,8 @@ interface Hits {
 }
 
 /** A castle's running damage number: hits within a short while add up on one label, like the ad's "-44". */
-interface Tally {
+interface Tally extends TallyState {
   fx: Fx;
-  total: number;
-  last: number;
 }
 
 const rand = (min: number, max: number): number =>
@@ -413,35 +414,28 @@ export class Effects {
     damage: number,
     shield: boolean,
   ) {
-    let t = this.tallies.get(id);
-    if (!t || this.now - t.last > 450) {
+    const prev = this.tallies.get(id);
+    const hit = addHit(prev, this.now, damage);
+    let t = prev;
+    if (!t || hit.fresh) {
       const top = y - art.CASTLE_SIZE.height - 40;
       const left = Phaser.Math.Clamp(x + rand(-18, 18), 110, ARENA_WIDTH - 110);
       const fx = this.show(this.text(), left, top, {
         life: 1100,
-        s0: 1.8,
-        s1: 1,
         grow: 140,
         hold: 0.55,
-        vy: -45,
+        vy: -TALLY_RISE,
       });
-      (fx.obj as Phaser.GameObjects.Text).setColor(
-        shield ? "#9ff3ff" : "#ff5a4a",
-      );
-      this.tallies.set(id, (t = { fx, total: 0, last: 0 }));
+      (fx.obj as Phaser.GameObjects.Text).setColor("#9ff3ff");
+      this.tallies.set(id, (t = Object.assign(hit.tally, { fx })));
     }
-    const before = Math.round(t.total);
-    t.total += damage;
-    t.last = this.now;
-    // A fresh hit pops the number again and keeps it on screen.
-    Object.assign(t.fx, {
-      age: 0,
-      s0: Math.min(2.2, 1.3 + damage / 40),
-      s1: Math.min(1.6, 1 + t.total / 150),
-    });
-    const shown = Math.max(1, Math.round(t.total));
-    if (shown !== before)
-      (t.fx.obj as Phaser.GameObjects.Text).setText(`-${shown}`);
+    const text = t.fx.obj as Phaser.GameObjects.Text;
+    // Hull damage turns a shield-only tally red.
+    if (!shield) text.setColor("#ff5a4a");
+    if (hit.changed) text.setText(`-${hit.shown}`);
+    // A hit pops the number again and keeps it on screen. Resetting the age also puts it back on its anchor above
+    // the castle (see `driftY`), so it only rises away once the hits stop.
+    Object.assign(t.fx, { age: 0, s0: hit.s0, s1: hit.s1 });
   }
 
   private gateSplit(
@@ -545,6 +539,8 @@ export class Effects {
   }
 
   private flash(tint: number, alpha: number): void {
+    // Full-screen flashes count as motion: `?calm` and reduced motion skip them.
+    if (this.calm) return;
     const fx = this.show(
       this.image("fx-px"),
       ARENA_WIDTH / 2,
@@ -595,6 +591,7 @@ export class Effects {
       a0: 1,
       hold: 0.5,
       vy: 0,
+      y0: y,
       ...o,
     };
     obj.setPosition(x, y).setVisible(true).setAlpha(fx.a0).setScale(fx.s0);
@@ -633,7 +630,7 @@ export class Effects {
           x0 + (x1 - x0) * e,
           y0 + (y1 - y0) * e - Math.sin(Math.PI * e) * 140,
         );
-      } else if (fx.vy) obj.y += (fx.vy * dt) / 1000;
+      } else if (fx.vy) obj.y = driftY(fx.y0, fx.vy, fx.age);
     }
   }
 
