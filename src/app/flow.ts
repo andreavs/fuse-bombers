@@ -238,7 +238,13 @@ export class Flow implements RoundSource {
     });
     this.screen = { kind: "countdown", left: COUNTDOWN };
     this.paused = false;
-    this.options.show(this, this.seats, false);
+    const prompt = (s: Seat) =>
+      s.device?.startsWith("touch:") ? "TAP!" : `PRESS ${s.tag}`;
+    this.options.show(
+      this,
+      this.seats.map((s) => (s.device ? { ...s, prompt: prompt(s) } : s)),
+      false,
+    );
     this.updateTouchZones();
   }
 

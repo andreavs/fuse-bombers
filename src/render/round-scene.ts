@@ -11,6 +11,7 @@ import {
   type RoundView,
   type TickEvent,
 } from "../engine/index.js";
+import * as aim from "./aim.js";
 import * as art from "./art.js";
 import { Effects } from "./effects/effects.js";
 import {
@@ -29,6 +30,11 @@ export interface PlayerLook {
   readonly color: number;
   /** A short label above the castle, e.g. the player's button (`Q`, `PAD 1`) or `BOT`. */
   readonly tag?: string;
+  /**
+   * Set for humans only: a badge such as `PRESS Q` shown over the castle at the start of each round. Humans also
+   * get the bold aiming guide and see which gates and crates their angle would pass through.
+   */
+  readonly prompt?: string;
 }
 
 /**
@@ -75,8 +81,8 @@ export const DEPTH = {
 
 const [W, H] = [ARENA_WIDTH, ARENA_HEIGHT];
 const INK = 0x1b1d26;
-/** Ticks of the predicted path shown as the dotted aiming guide. */
-const GUIDE_TICKS = 18;
+/** Ticks at the start of a round during which the `prompt` badges show (the countdown counts as tick 0). */
+const PROMPT_TICKS = 240;
 const FUSE = { y: 28, x0: 70, x1: 1510 } as const;
 
 type Pool<O> = Map<number, O>;
@@ -123,6 +129,7 @@ export class RoundScene extends Phaser.Scene {
   private banner!: Phaser.GameObjects.Text;
   private castles: Phaser.GameObjects.Image[][] = [];
   private tags: Phaser.GameObjects.Text[] = [];
+  private prompts: (Phaser.GameObjects.Text | undefined)[] = [];
   private rockets: Phaser.GameObjects.Image[] = [];
   private rocketKeys: string[] = [];
   private shownRockets = 0;
@@ -141,6 +148,7 @@ export class RoundScene extends Phaser.Scene {
     this.current = null;
     this.castles = [];
     this.tags = [];
+    this.prompts = [];
     this.rockets = [];
     this.rocketKeys = [];
     this.shownRockets = 0;
@@ -201,7 +209,7 @@ export class RoundScene extends Phaser.Scene {
           .setScale(Math.min(1, (view.tick - c.spawnTick) / 15));
       },
     );
-    for (const c of view.castles) this.drawCastle(view, c);
+    for (const c of view.castles) this.drawCastle(view, c, time);
     this.drawRockets(view);
     this.drawFuse(view, time);
     this.drawBanner(view);
@@ -245,6 +253,7 @@ export class RoundScene extends Phaser.Scene {
     this.terrain.reset(view.terrain, THEMES[theme] ?? THEMES[0]!);
     for (const object of [...this.castles.flat(), ...this.tags])
       object.destroy();
+    for (const object of this.prompts) object?.destroy();
     for (const pool of [this.gateLabels, this.crates]) {
       for (const object of pool.values()) object.destroy();
       pool.clear();
@@ -254,6 +263,12 @@ export class RoundScene extends Phaser.Scene {
         css(this.look(c.id).color),
       ),
     );
+    this.prompts = view.castles.map((c) => {
+      const prompt = this.look(c.id).prompt;
+      return prompt === undefined
+        ? undefined
+        : this.text(0, 0, prompt, 18, DEPTH.hud + 1);
+    });
     this.castles = view.castles.map((c) => {
       const color = this.look(c.id).color;
       const tint = Phaser.Display.Color.ValueToColor(color).lighten(25);
@@ -274,7 +289,7 @@ export class RoundScene extends Phaser.Scene {
     });
   }
 
-  private drawCastle(view: RoundView, c: CastleView): void {
+  private drawCastle(view: RoundView, c: CastleView, time: number): void {
     const t = view.tuning;
     const hud = this.hud;
     const [body, launcher, shield] = this.castles[c.id] ?? [];
@@ -285,6 +300,7 @@ export class RoundScene extends Phaser.Scene {
       ?.setVisible(c.alive)
       .setPosition(c.x, c.y - art.CASTLE_SIZE.height - 34);
     shield.setVisible(c.alive && c.shieldHp > 0);
+    this.drawPrompt(view, c, time);
     if (!c.alive) {
       body.setTint(0x4a4a55).setAngle(c.id % 2 === 0 ? -8 : 8);
       return;
@@ -307,15 +323,17 @@ export class RoundScene extends Phaser.Scene {
       .fillStyle(0x9ff3ff)
       .fillRect(x0, y0 + 5, (w * c.shieldHp) / t.shieldMax, 3);
 
+    const { color, prompt } = this.look(c.id);
     if (isLoaded(c) && !view.result) {
-      const { points } = predictTrajectory(view, c.id, undefined, {
-        maxTicks: GUIDE_TICKS,
+      const human = prompt !== undefined;
+      const style = human ? aim.HUMAN_GUIDE : aim.BOT_GUIDE;
+      // Humans predict the whole flight to find the gates and crates on it; only a prefix is drawn.
+      const path = predictTrajectory(view, c.id, undefined, {
+        maxTicks: human ? undefined : style.ticks,
       });
-      for (let i = 2; i < points.length; i += 2) {
-        const { x, y } = points[i] ?? pivot;
-        hud.fillStyle(INK, 0.45).fillCircle(x, y, 5.5 - i * 0.1);
-        hud.fillStyle(0xffffff, 0.95).fillCircle(x, y, 4 - i * 0.1);
-      }
+      if (human) aim.drawTargets(hud, view, path, color, time);
+      aim.drawGuide(hud, path.points, color, style);
+      aim.drawReady(hud, pivot, color, time, human);
     } else if (c.reloadTicks > 0 && c.reloadTotalTicks > 0) {
       const done = 1 - c.reloadTicks / c.reloadTotalTicks;
       const start = -Math.PI / 2;
@@ -326,7 +344,34 @@ export class RoundScene extends Phaser.Scene {
         .strokePath();
     }
     if (c.megaReady)
-      hud.lineStyle(3, 0xd35cff).strokeCircle(pivot.x, pivot.y, 22);
+      hud.lineStyle(3, 0xd35cff).strokeCircle(pivot.x, pivot.y, 28);
+  }
+
+  /** The `PRESS Q` badge bobbing over a human's castle for the first seconds of a round. */
+  private drawPrompt(view: RoundView, c: CastleView, time: number): void {
+    const label = this.prompts[c.id];
+    if (!label) return;
+    const show = c.alive && !view.result && view.tick < PROMPT_TICKS;
+    if (!label.setVisible(show).visible) return;
+    const x = c.x;
+    const y = c.y - art.CASTLE_SIZE.height - 84 + 5 * Math.sin(time / 160);
+    label.setPosition(x, y);
+    const [w, h] = [label.width + 22, label.height + 16];
+    const hud = this.hud;
+    hud
+      .fillStyle(INK)
+      .fillRoundedRect(x - w / 2 - 3, y - h / 2 - 3, w + 6, h + 6, 9);
+    hud.fillTriangle(x - 13, y + h / 2, x + 13, y + h / 2, x, y + h / 2 + 16);
+    hud.fillStyle(this.look(c.id).color);
+    hud.fillRoundedRect(x - w / 2, y - h / 2, w, h, 7);
+    hud.fillTriangle(
+      x - 8,
+      y + h / 2 - 1,
+      x + 8,
+      y + h / 2 - 1,
+      x,
+      y + h / 2 + 10,
+    );
   }
 
   /** One pooled image per live rocket, the smoke streak baked into its texture. */

@@ -13,9 +13,12 @@ turn into huge swarms that chew through mountains, shields and walls.
   (health bar above it) and settles onto the ground as terrain beneath it is destroyed. At 0 HP it explodes and is out
   for the round.
 - **One-button aiming.** Every player plays with a single button. The castle's launcher angle sweeps back and forth
-  continuously across its arc (like a metronome); a short dotted guide shows the first part of the trajectory.
-  Pressing the button launches a volley at the current angle with a fixed launch speed, so timing picks range and
-  target. The launcher then reloads (a few seconds, shown on the castle).
+  continuously across its arc (like a metronome); a short dotted guide in the player's colour shows the first part of
+  the trajectory. Pressing the button launches a volley at the current angle with a fixed launch speed, so timing
+  picks range and target. The launcher then reloads (a few seconds, shown on the castle). Humans get a bolder, longer
+  guide, a pulsing ring on the loaded launcher, brackets around the gates and crates the full path would cross, and a
+  `PRESS Q` badge over their castle for the first seconds of a round
+  ([screenshot](images/aim-readability.png)).
 - **Volleys.** A volley is a stream of rockets (one per "unit" the castle has; start with ~5) released in quick
   succession with slight spread, so they travel as a ribbon with smoke trails.
 - **Multiplier gates.** Coloured gates drift slowly in the sky between castles. A rocket that passes through a gate
