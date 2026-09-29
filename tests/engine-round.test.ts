@@ -18,6 +18,7 @@ import {
   addRocket,
   clearSky,
   placeGate,
+  playOut,
   spamInputs,
 } from "./engine-helpers.js";
 
@@ -192,6 +193,32 @@ test("a rocket passing a gate splits into `multiplier` rockets, once per gate pe
   }
   assert.equal(eventsOf(run(s, 30), "gate-split").length, 0);
   assert.equal(s.rockets.length, 5);
+});
+
+test("gates keep their distance from each other at spawn, respawn and while drifting (#36)", () => {
+  let respawns = 0;
+  for (let n = 2; n <= 6; n++) {
+    for (let seed = 1; seed <= 8; seed++) {
+      playOut({ seed: 36_000 + seed, playerCount: n }, spamInputs, (s) => {
+        const { gateSpacing } = s.tuning;
+        respawns += eventsOf(s.events, "gate-spawned").length;
+        for (const a of s.gates) {
+          assert.ok(
+            a.minX <= a.x && a.x <= a.maxX,
+            `gate ${a.id} left its lane`,
+          );
+          for (const b of s.gates) {
+            if (a.id >= b.id) continue;
+            assert.ok(
+              Math.abs(a.x - b.x) >= gateSpacing,
+              `seed ${seed}, ${n}p, tick ${s.tick}: gates ${a.id} and ${b.id} at x ${a.x} and ${b.x}`,
+            );
+          }
+        }
+      });
+    }
+  }
+  assert.ok(respawns > 100, `only ${respawns} respawns`);
 });
 
 test("the rocket cap holds and folds capped children into rocket power", () => {
