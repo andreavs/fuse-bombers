@@ -72,9 +72,10 @@ export function lobbyHtml(lobby: Lobby, touch: boolean): string {
 
 /**
  * Small badges along the bottom: name, button and round wins in the player's colour; knocked-out castles dim.
- * `pause` adds a pause button in the corner (for touch players, who have no Esc or Start button).
+ * `pause` adds a pause button in the corner (for touch players, who have no Esc or Start button). A sim `speed`
+ * above 1 (the bots finishing a round on their own) shows a fast-forward sign.
  */
-export function hudHtml(info: MatchInfo, pause = false): string {
+export function hudHtml(info: MatchInfo, pause = false, speed = 1): string {
   const badges = info.seats.map((s) => {
     const out = info.view.castles[s.slot]?.alive === false ? " out" : "";
     return `<div class="badge${out}" style="--c:${css(s.color)}">${s.name} <small>${s.tag}</small>${pips(info, s.slot)}</div>`;
@@ -82,6 +83,10 @@ export function hudHtml(info: MatchInfo, pause = false): string {
   const corner = pause
     ? `<button class="pause" data-action="pause" aria-label="Pause">II</button>`
     : "";
+  if (speed > 1.05)
+    badges.push(
+      `<div class="badge fast-forward">⏩ BOTS ONLY ×${speed.toFixed(1)}</div>`,
+    );
   return `<div class="hud">${badges.join("")}</div>${corner}`;
 }
 

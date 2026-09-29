@@ -21,6 +21,10 @@ handful into a swarm.
 - **The fuse.** The burning fuse across the top is the round timer (90 s). When it burns out, sudden death begins:
   bombs rain down and damage keeps growing. At 3 minutes the round ends on HP: the castle with the most HP wins, and
   a tie is a draw.
+- **Ghosts.** When your castle is destroyed you keep playing as a ghost blimp (your colour, your key on the side)
+  drifting along the top. Your button drops a bomb when one hangs under the blimp; a short dotted guide shows where it
+  falls. Ghosts cannot win, but they can decide who does. Once every human is out and no ghost has pressed for a few
+  seconds, the bots finish the round at up to double speed (⏩ in the bottom bar).
 - **Winning.** The last castle standing wins the round (a wipe-out is a draw); if more than one is still standing at
   3 minutes, the highest HP wins (a tie is a draw). First to N round wins takes the match;
   N is 3 by default and set in the lobby (up to 9).
@@ -37,7 +41,7 @@ played by bots.
 | Touch    | Your coloured tap zone along the bottom edge                  | Tap the on-screen buttons; the `II` corner button pauses                                        |
 
 Lobby shortcuts: `2`–`6` sets the player count, `R` cycles rounds to win (1–5; the `+`/`−` buttons go up to 9), `B`
-cycles every bot's level, and `Enter` starts. Click a bot to change its level. Mid-round, `Esc` or a pad's Start/Back
+cycles every bot's level (bots start on easy), and `Enter` starts. Click a bot to change its level. Mid-round, `Esc` or a pad's Start/Back
 pauses; while paused, `Enter`/`Space`/`Esc` resume and `Backspace` quits to the lobby. On the winner screen, `Enter`
 plays again and `Esc` or `Backspace` returns to the lobby.
 

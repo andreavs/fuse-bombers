@@ -130,3 +130,41 @@ test("one advance never spans two rounds: the next round starts on the following
   }
   assert.equal(restarts, 2, "rounds finished and restarted");
 });
+
+test("a bots-only round fast-forwards once the humans are out, unless a human ghost keeps pressing", () => {
+  let press = false;
+  const runner = new RoundRunner({
+    seed: 6,
+    controllers: [null, 1, 2, 3].map((id) =>
+      id === null ? null : createBotPlayer("hard", id, id),
+    ),
+    input: { takePresses: () => [press] },
+  });
+  const round = runner.view;
+  // The idle human never presses, so the bots knock its castle out sooner or later.
+  for (let i = 0; i < 60 * 180 && round.castles[0]?.alive; i++) {
+    runner.advance(STEP_MS);
+    assert.equal(runner.speed, 1, "1× while the human's castle stands");
+  }
+  assert.ok(!round.castles[0]?.alive && !round.result, "the human is out");
+  const out = round.tick;
+  while (round.tick - out < 60 * 4.5) runner.advance(STEP_MS);
+  assert.equal(runner.speed, 1, "a moment to notice the ghost");
+  while (round.tick - out < 60 * 9 && !round.result) runner.advance(STEP_MS);
+  assert.equal(runner.speed, 2, "then the bots finish at double speed");
+  press = true;
+  runner.advance(STEP_MS);
+  press = false;
+  for (let i = 0; i < 20; i++) runner.advance(STEP_MS);
+  assert.equal(runner.speed, 1, "a human ghost pressing brings back 1×");
+  assert.ok(!runner.botsOnly);
+});
+
+test("matches without humans never fast-forward", () => {
+  const runner = new RoundRunner({
+    seed: 7,
+    controllers: [0, 1, 2].map((id) => createBotPlayer("hard", id, id)),
+  });
+  for (let i = 0; i < 60 * 60; i++) runner.advance(STEP_MS);
+  assert.equal(runner.speed, 1);
+});

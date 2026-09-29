@@ -10,6 +10,8 @@ export type CueKind =
   | "shield-pop"
   | "crate"
   | "destroyed"
+  | "ghost"
+  | "drop"
   | "alarm"
   | "fanfare";
 
@@ -41,6 +43,8 @@ export const CUE_SPECS: Readonly<Record<CueKind, CueSpec>> = {
   "shield-pop": { duration: 0.6, minGap: 0.1, maxVoices: 2, important: true },
   crate: { duration: 0.4, minGap: 0.1, maxVoices: 2, important: true },
   destroyed: { duration: 1.6, minGap: 0.2, maxVoices: 2, important: true },
+  ghost: { duration: 0.9, minGap: 0.3, maxVoices: 1, important: true },
+  drop: { duration: 0.5, minGap: 0.08, maxVoices: 3 },
   alarm: { duration: 1.8, minGap: 1, maxVoices: 1, important: true },
   fanfare: { duration: 1.6, minGap: 1, maxVoices: 1, important: true },
 };
@@ -87,6 +91,12 @@ export function planCues(events: readonly TickEvent[]): Cue[] {
         break;
       case "castle-destroyed":
         add("destroyed", 1);
+        break;
+      case "ghost-spawned":
+        add("ghost", 1);
+        break;
+      case "ghost-bomb-dropped":
+        add("drop", 0.6);
         break;
       case "sudden-death-started":
         add("alarm", 1);

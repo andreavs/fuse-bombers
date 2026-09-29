@@ -22,6 +22,13 @@ export const HUMAN_GUIDE: GuideStyle = {
   alpha: 1,
   shine: true,
 };
+/** A human ghost's drop guide: bold, but only the first stretch of the fall. */
+export const GHOST_GUIDE: GuideStyle = {
+  ticks: 22,
+  radius: 6,
+  alpha: 1,
+  shine: true,
+};
 export const BOT_GUIDE: GuideStyle = {
   ticks: 18,
   radius: 4.5,

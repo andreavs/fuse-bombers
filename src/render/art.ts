@@ -53,6 +53,30 @@ const rocket = (body: string): string => `
 <path d="M32 3h10q6 4 0 8H32z" fill="${body}" stroke="${INK}" stroke-width="1.5"/>
 <path d="M38 4.5h2v5h-2z" fill="#fff"/>`;
 
+/** Ghost blimp texture size; the envelope's centre (the engine's ghost position) sits at `centerY`. */
+export const BLIMP = { width: 96, height: 56, centerY: 24 } as const;
+
+/** A friendly ghost blimp heading right: the player's colour, tail fins, big eyes and a gondola. */
+const blimp = (body: string): string => `
+<g stroke="${INK}" stroke-width="2" stroke-linejoin="round">
+  <path d="M22 18L4 5h11l14 11zM22 30L4 43h11l14-11z" fill="${body}"/>
+  <ellipse cx="52" cy="24" rx="40" ry="18" fill="${body}"/>
+  <path d="M38 41h26l-4 10H42z" fill="#3d424f"/>
+  <path d="M44 41l-3-4M58 41l3-4" stroke-width="1.5"/>
+  <ellipse cx="74" cy="19" rx="5" ry="6.5" fill="#fbfbf2" stroke-width="1.5"/>
+  <ellipse cx="85" cy="19" rx="4" ry="6" fill="#fbfbf2" stroke-width="1.5"/>
+</g>
+<path d="M22 14q30-12 62 0" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="4" stroke-linecap="round"/>
+<path d="M75 18h3v4h-3zM86 18h2.5v4H86z" fill="${INK}"/>
+<path d="M45 44h3v4h-3zM51 44h3v4h-3zM57 44h3v4h-3z" fill="#ffe28a"/>`;
+
+/** A ghost's bomb, nose right: fat and dark with fins and a band in the owner's colour, no smoke streak. */
+const ghostBomb = (fins: string): string => `
+<path d="M2 3l9 5-9 5z" fill="${fins}" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
+<ellipse cx="18" cy="8" rx="11" ry="6.5" fill="#2a2d38" stroke="#0c0d12" stroke-width="1.5"/>
+<path d="M12 2.8h3.5v10.4H12z" fill="${fins}"/>
+<ellipse cx="22" cy="5.5" rx="3.5" ry="1.6" fill="#fff" fill-opacity=".5"/>`;
+
 /** The castle sprite as standalone SVG markup, for menus drawn outside Phaser. */
 export function castleSvg(color: number): string {
   const { width, height } = CASTLE_SIZE;
@@ -94,9 +118,9 @@ ${
         font-weight="900" font-size="15" fill="${color}">${symbol}</text>`
 }`;
 
-/** Texture key of a player-coloured sprite (`castle`, `launcher` or `rocket`) in `color`, e.g. `castle-e8403a`. */
+/** Texture key of a player-coloured sprite in `color`, e.g. `castle-e8403a`. */
 export function spriteKey(
-  kind: "castle" | "launcher" | "rocket",
+  kind: "castle" | "launcher" | "rocket" | "blimp" | "ghost-bomb",
   color: number,
 ): string {
   return `${kind}-${css(color).slice(1)}`;
@@ -119,6 +143,13 @@ export function loadSprites(
     add(spriteKey("castle", color), w, h, castle(css(color)));
     add(spriteKey("launcher", color), LAUNCHER.width, 16, launcher(css(color)));
     add(spriteKey("rocket", color), ROCKET.width, 14, rocket(css(color)));
+    add(
+      spriteKey("blimp", color),
+      BLIMP.width,
+      BLIMP.height,
+      blimp(css(color)),
+    );
+    add(spriteKey("ghost-bomb", color), 30, 16, ghostBomb(css(color)));
   }
   add("rocket-bomb", 20, 20, BOMB);
   add("shield", SHIELD_SIZE, SHIELD_SIZE, SHIELD);

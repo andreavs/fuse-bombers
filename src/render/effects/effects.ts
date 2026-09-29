@@ -276,6 +276,17 @@ export class Effects {
         case "castle-destroyed":
           this.castleDestroyed(e.castleId, e.x, e.y);
           break;
+        case "ghost-spawned":
+          this.ghostSpawned(e.owner, e.x, e.y);
+          break;
+        case "ghost-bomb-dropped":
+          this.puffSize = 0.5;
+          this.smoke.emitParticleAt(e.x, e.y + 30, 3);
+          this.ring(e.x, e.y + 30, playerColor(e.owner), 0.2, 0.9, 260, 0.9);
+          break;
+        case "ghost-bomb-hit":
+          this.ring(e.x, e.y, playerColor(e.owner), 0.4, 2.2, 380, 0.9);
+          break;
         case "sudden-death-started":
           this.flash(0xff4a3a, 0.3);
           this.shake(0.5);
@@ -324,7 +335,8 @@ export class Effects {
       if (!r) continue;
       const speed = Math.hypot(r.vx, r.vy) || 1;
       const big = r.mega || r.power > 1 ? 1.5 : 1;
-      const tail = r.bomb ? 8 : 26 * big;
+      const round = r.bomb || r.ghost;
+      const tail = round ? 10 : 26 * big;
       const [x, y] = [r.x - (r.vx / speed) * tail, r.y - (r.vy / speed) * tail];
       // At most one puff per grid cell and frame: a dense stream gets an even ribbon, not random clumps.
       const cell = Math.floor(x / CELL) + Math.floor(y / CELL) * COLS;
@@ -332,7 +344,7 @@ export class Effects {
         if (this.cells[cell] === stamp) continue;
         this.cells[cell] = stamp;
       }
-      this.puffSize = (r.bomb ? 0.35 : 0.42) * big * thin;
+      this.puffSize = (round ? 0.35 : 0.42) * big * thin;
       for (let j = 0; j < each; j++) {
         const back = (speed * dt * j) / each / 1000;
         this.smoke.emitParticleAt(
@@ -516,6 +528,14 @@ export class Effects {
     this.ring(x, cy, 0xfff0a0, 0.5, 7, 450, 1);
     this.flash(0xffffff, 0.3);
     this.shake(1);
+  }
+
+  /** The ghost blimp puffs into view in its owner's colour above the wreck. */
+  private ghostSpawned(owner: number, x: number, y: number): void {
+    this.puffSize = 1.2;
+    this.smoke.emitParticleAt(x, y, 8);
+    this.ring(x, y, playerColor(owner), 0.4, 3, 520, 1);
+    this.ring(x, y, 0xffffff, 0.3, 1.8, 380, 0.7);
   }
 
   private ring(
