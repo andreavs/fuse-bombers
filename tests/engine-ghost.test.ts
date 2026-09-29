@@ -253,3 +253,105 @@ test("balance: bot rounds with ghosts end in similar time and ghosts do not domi
   const share = ghost / total;
   assert.ok(share > 0.02 && share < 0.25, `ghost damage share ${share}`);
 });
+
+test("ghost bombs bypass the rocket cap, so a loaded press always drops", () => {
+  const { s, ghost } = withGhost(23, { maxRockets: 40, splitReserve: 0 });
+  assert.ok(ghost);
+  while (!isGhostLoaded(ghost)) step(s);
+  // Fill the cap with rockets that leave the arena during the same step.
+  while (s.rockets.length < s.tuning.maxRockets)
+    addRocket(s, { owner: 0, x: -1000, y: 100 });
+  const dropped = only(step(s, [false, true]).slice(), "ghost-bomb-dropped");
+  assert.equal(dropped.length, 1);
+  assert.ok(s.rockets.some((r) => r.id === dropped[0]?.rocketId && r.ghost));
+  assert.equal(s.castles[1]?.stats.ghostBombs, 1);
+});
+
+test("ghost bombs landing after the round emit no ghost-bomb-hit or damage", () => {
+  const { s } = withGhost(25);
+  const last = s.castles[2];
+  const winner = s.castles[0];
+  assert.ok(last && winner);
+  last.hp = 1;
+  const lc = castleCenter(last, s.tuning);
+  addRocket(s, { owner: 0, x: lc.x, y: lc.y - 40, vy: 600 });
+  run(s, 10);
+  assert.equal(s.phase, "over");
+  const hp = winner.hp;
+  const wc = castleCenter(winner, s.tuning);
+  // One bomb straight onto the winner, one onto open ground.
+  addRocket(s, { owner: 1, ghost: true, x: wc.x, y: wc.y - 40, vy: 600 });
+  addRocket(s, { owner: 1, ghost: true, x: 800, y: 60, vy: 60 });
+  const after: TickEvent[] = [];
+  for (let i = 0; i < 200; i++) after.push(...step(s));
+  assert.equal(only(after, "ghost-bomb-hit").length, 0);
+  assert.equal(only(after, "hit").length, 0);
+  assert.ok(only(after, "crater").length >= 1, "the aftermath still craters");
+  assert.equal(winner.hp, hp);
+  assert.equal(s.castles[1]?.stats.ghostDamage, 0);
+});
+
+test("two castles destroyed on the same tick each get exactly one ghost", () => {
+  const s = createRound({ seed: 26, playerCount: 4 });
+  clearSky(s);
+  for (const id of [1, 2]) {
+    const c = s.castles[id];
+    assert.ok(c);
+    c.hp = 1;
+    const p = castleCenter(c, s.tuning);
+    // Castle 1 takes two rockets on the killing tick.
+    for (let k = 0; k < (id === 1 ? 2 : 1); k++)
+      addRocket(s, { owner: 0, x: p.x, y: p.y - 40, vy: 600 });
+  }
+  const events = run(s, 10);
+  const destroyed = only(events, "castle-destroyed");
+  assert.deepEqual(destroyed.map((e) => e.castleId).sort(), [1, 2]);
+  assert.equal(destroyed[0]?.tick, destroyed[1]?.tick);
+  const spawned = only(events, "ghost-spawned");
+  assert.deepEqual(spawned.map((e) => e.owner).sort(), [1, 2]);
+  assert.ok(spawned.every((e) => e.tick === destroyed[0]?.tick));
+  assert.deepEqual(s.ghosts.map((g) => g.owner).sort(), [1, 2]);
+  assert.equal(s.result, null);
+});
+
+test("a castle killed by a sudden-death bomb gets a ghost", () => {
+  const s = createRound({ seed: 27, playerCount: 3 });
+  clearSky(s);
+  const victim = s.castles[1];
+  assert.ok(victim);
+  victim.hp = 1;
+  const c = castleCenter(victim, s.tuning);
+  addRocket(s, { owner: -1, bomb: true, x: c.x, y: c.y - 40, vy: 600 });
+  const events = run(s, 10);
+  const destroyed = only(events, "castle-destroyed");
+  assert.equal(destroyed.length, 1);
+  assert.equal(destroyed[0]?.by, -1);
+  assert.deepEqual(
+    only(events, "ghost-spawned").map((e) => e.owner),
+    [1],
+  );
+  assert.ok(ghostOf(s, 1));
+});
+
+test("a press on the tick of death does not drop a ghost bomb", () => {
+  const s = createRound({ seed: 21, playerCount: 3 });
+  clearSky(s);
+  const victim = s.castles[1];
+  assert.ok(victim);
+  victim.hp = 1;
+  const c = castleCenter(victim, s.tuning);
+  addRocket(s, { owner: 0, x: c.x, y: c.y - 40, vy: 600 });
+  const press = () => [false, true, false];
+  let events: readonly TickEvent[] = [];
+  for (let i = 0; i < 10 && !ghostOf(s, 1); i++) events = step(s, press());
+  assert.equal(only(events.slice(), "castle-destroyed").length, 1);
+  assert.equal(only(events.slice(), "ghost-bomb-dropped").length, 0);
+  const ghost = ghostOf(s, 1);
+  assert.ok(ghost && !isGhostLoaded(ghost));
+  // Mashing through the first reload drops nothing until the ghost is loaded.
+  let drops = 0;
+  while (!isGhostLoaded(ghost))
+    drops += only(step(s, press()).slice(), "ghost-bomb-dropped").length;
+  assert.equal(drops, 0);
+  assert.equal(only(step(s, press()).slice(), "ghost-bomb-dropped").length, 1);
+});
