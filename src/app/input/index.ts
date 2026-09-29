@@ -2,6 +2,7 @@
 export {
   InputHub,
   deviceLabel,
+  type Command,
   type DeviceId,
   type InputSource,
   type PressListener,

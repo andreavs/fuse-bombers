@@ -5,6 +5,8 @@
  * - `onPress` — "device X pressed", for the lobby to join players (fires for bound and unbound devices alike).
  * - `bind`/`unbind` — which device plays in which player slot.
  * - `takePresses` — per-slot "pressed since the last take" booleans for the engine's fixed step.
+ * - `onCommand` — menu commands from buttons that are never a player's button (a pad's Start and Back), so starting
+ *   or pausing can never cost a shot, and a shot can never pause.
  *
  * Presses are latched until taken, so a tap between two engine steps is never lost, and several engine steps in one
  * frame see it only once. The hub knows nothing about browsers; the device sources in this folder feed it.
@@ -28,8 +30,16 @@ export interface InputSource {
 
 export type PressListener = (device: DeviceId) => void;
 
+/**
+ * `start`: a pad's Start (Options, Menu) button, `back`: its Back (Select, View, Share) button, `hold`: a pad's
+ * player button held down for a second (the lobby's way to start from a pad whose Start button is unknown).
+ */
+export type Command = "start" | "back" | "hold";
+export type CommandListener = (device: DeviceId, command: Command) => void;
+
 export class InputHub {
   private readonly listeners = new Set<PressListener>();
+  private readonly commandListeners = new Set<CommandListener>();
   private readonly sources: InputSource[] = [];
   private readonly slotDevices = new Map<number, DeviceId>();
   private readonly pending = new Set<DeviceId>();
@@ -59,6 +69,23 @@ export class InputHub {
   onPress(listener: PressListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Report a menu command. It is not a press: it never latches for `takePresses`. */
+  command(device: DeviceId, command: Command): void {
+    for (const listener of [...this.commandListeners]) {
+      try {
+        listener(device, command);
+      } catch (error) {
+        this.onListenerError(error);
+      }
+    }
+  }
+
+  /** Listen for menu commands. Returns the unsubscribe function. */
+  onCommand(listener: CommandListener): () => void {
+    this.commandListeners.add(listener);
+    return () => this.commandListeners.delete(listener);
   }
 
   addSource(source: InputSource): void {
@@ -123,6 +150,7 @@ export class InputHub {
   dispose(): void {
     for (const source of this.sources.splice(0)) source.dispose?.();
     this.listeners.clear();
+    this.commandListeners.clear();
     this.pending.clear();
   }
 }

@@ -3,7 +3,7 @@ import type { MusicKind } from "./audio/index.js";
 import { css } from "../render/palette.js";
 import type { PlayerLook, RoundSource } from "../render/round-scene.js";
 import { createBotPlayer } from "./bot.js";
-import type { BrowserInput, DeviceId } from "./input/index.js";
+import type { BrowserInput, Command, DeviceId } from "./input/index.js";
 import { Lobby, PLAYER_NAMES, type Seat } from "./lobby.js";
 import { RoundRunner } from "./round-runner.js";
 import * as screens from "./screens.js";
@@ -14,6 +14,9 @@ type Screen =
   | { kind: "playing"; overFor: number }
   | { kind: "results"; left: number }
   | { kind: "winner" };
+
+/** What the menus answer to: the screen, or `paused` over it. */
+export type MenuState = Screen["kind"] | "paused";
 
 export interface FlowOptions {
   input: BrowserInput;
@@ -30,6 +33,13 @@ export interface FlowOptions {
   seed: number;
   /** `?speed=N`: run the game and its timers N times as fast (for tests). */
   speed?: number;
+  /** Where menu keys come from; `window` by default, a fake in tests. */
+  keys?: {
+    addEventListener(
+      type: "keydown",
+      listener: (event: KeyboardEvent) => void,
+    ): void;
+  };
 }
 
 const COUNTDOWN = 3;
@@ -38,6 +48,30 @@ const GO = 0.7;
 /** Seconds of explosions and the winner banner before the results screen. */
 const AFTERMATH = 2.5;
 const RESULTS = 7;
+
+/**
+ * The action a menu key (a `KeyboardEvent.code`) or a pad's `start`/`back` command takes in `state`, if any. Enter,
+ * Space and Start confirm, Esc and Back go back; mid-round Start also pauses. None of these is a player's button,
+ * so a shot never pauses and pausing never costs a shot.
+ */
+export function menuAction(state: MenuState, key: string): string | undefined {
+  const primary = key === "Enter" || key === "Space" || key === "start";
+  const back = key === "Escape" || key === "back";
+  if (state === "lobby") {
+    if (primary) return "start";
+    if (/^Digit[2-6]$/.test(key)) return `players:${key.slice(5)}`;
+    if (key === "KeyR") return "wins";
+    if (key === "KeyB") return "bots";
+  } else if (state === "paused") {
+    if (primary || back) return "resume";
+    if (key === "Backspace") return "quit";
+  } else if (state === "winner") {
+    if (primary) return "again";
+    if (back || key === "Backspace") return "lobby";
+  } else if (state === "results" && primary) return "next";
+  else if (back || key === "start") return "pause";
+  return undefined;
+}
 
 /**
  * The match flow: lobby (a bots-only round plays behind it) → countdown → round → results → … → match winner →
@@ -59,7 +93,11 @@ export class Flow implements RoundSource {
     this.speed = Math.max(1, Math.floor(options.speed ?? 1));
     if (options.input.touchEnabled) options.root.dataset.touch = "";
     options.input.hub.onPress((device) => this.onPress(device));
-    window.addEventListener("keydown", (event) => this.onKey(event));
+    options.input.hub.onCommand((device, command) =>
+      this.onCommand(device, command),
+    );
+    const keys: NonNullable<FlowOptions["keys"]> = options.keys ?? window;
+    keys.addEventListener("keydown", (event) => this.onKey(event));
     options.root.addEventListener("mousedown", (event) => {
       if ((event.target as Element).closest("button")) event.preventDefault(); // Keep focus off buttons.
     });
@@ -115,7 +153,11 @@ export class Flow implements RoundSource {
     if (screen.kind === "lobby")
       html = screens.lobbyHtml(this.lobby, this.options.input.touchEnabled);
     else {
-      html = screens.hudHtml(info);
+      const pause = // Touch players have no Esc or Start button.
+        this.options.input.touchEnabled &&
+        !this.paused &&
+        (screen.kind === "countdown" || screen.kind === "playing");
+      html = screens.hudHtml(info, pause);
       if (this.paused) html += screens.pauseHtml();
       else if (screen.kind === "countdown")
         html += screens.countdownHtml(
@@ -140,28 +182,28 @@ export class Flow implements RoundSource {
     this.updateTouchZones();
   }
 
+  private get menuState(): MenuState {
+    return this.paused ? "paused" : this.screen.kind;
+  }
+
   private onKey(event: KeyboardEvent): void {
     if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
-    const kind = this.paused ? "paused" : this.screen.kind;
-    const key = event.code;
-    const primary = key === "Enter" || key === "Space";
-    let action: string | undefined;
-    if (kind === "lobby") {
-      if (primary) action = "start";
-      else if (/^Digit[2-6]$/.test(key)) action = `players:${key.slice(5)}`;
-      else if (key === "KeyR") action = "wins";
-      else if (key === "KeyB") action = "bots";
-    } else if (kind === "paused") {
-      if (primary || key === "Escape") action = "resume";
-      else if (key === "Backspace") action = "quit";
-    } else if (kind === "winner") {
-      if (primary) action = "again";
-      else if (key === "Escape" || key === "Backspace") action = "lobby";
-    } else if (key === "Escape") action = "pause";
-    else if (kind === "results" && primary) action = "next";
+    const action = menuAction(this.menuState, event.code);
     if (!action) return;
     event.preventDefault();
     this.act(action);
+  }
+
+  /** A pad's Start or Back button; holding a seated player's button in the lobby starts too. */
+  private onCommand(device: DeviceId, command: Command): void {
+    if (command !== "hold") {
+      const action = menuAction(this.menuState, command);
+      if (action) this.act(action);
+    } else if (
+      this.menuState === "lobby" &&
+      this.lobby.devices.includes(device)
+    )
+      this.act("start");
   }
 
   private act(action: string): void {
@@ -225,7 +267,9 @@ export class Flow implements RoundSource {
 
   private startMatch(): void {
     const { hub } = this.options.input;
-    this.seats = this.lobby.seats(); // The hub's bindings already mirror the lobby's seated devices.
+    this.lobby.compactTouchZones();
+    this.seats = this.lobby.seats();
+    for (const s of this.seats) if (s.device) hub.bind(s.slot, s.device); // Touch zones may have been renumbered.
     const seed = this.seed++;
     this.runner = new RoundRunner({
       seed,

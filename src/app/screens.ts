@@ -65,17 +65,24 @@ export function lobbyHtml(lobby: Lobby, touch: boolean): string {
     ${button("bots", "ALL BOTS", "B")}
   </div>
   ${button("start", start, "ENTER", "start")}
-  <p>ONE BUTTON EACH: PRESS TO FIRE AS THE LAUNCHER SWEEPS · ESC PAUSES</p>
+  <p>ONE BUTTON EACH: PRESS TO FIRE AS THE LAUNCHER SWEEPS · ESC${touch ? ", II" : ""} OR PAD START PAUSES</p>
+  <p>GAMEPADS: START BEGINS, OR HOLD YOUR BUTTON FOR A SECOND</p>
 </div>`;
 }
 
-/** Small badges along the bottom: name, button and round wins in the player's colour; knocked-out castles dim. */
-export function hudHtml(info: MatchInfo): string {
+/**
+ * Small badges along the bottom: name, button and round wins in the player's colour; knocked-out castles dim.
+ * `pause` adds a pause button in the corner (for touch players, who have no Esc or Start button).
+ */
+export function hudHtml(info: MatchInfo, pause = false): string {
   const badges = info.seats.map((s) => {
     const out = info.view.castles[s.slot]?.alive === false ? " out" : "";
     return `<div class="badge${out}" style="--c:${css(s.color)}">${s.name} <small>${s.tag}</small>${pips(info, s.slot)}</div>`;
   });
-  return `<div class="hud">${badges.join("")}</div>`;
+  const corner = pause
+    ? `<button class="pause" data-action="pause" aria-label="Pause">II</button>`
+    : "";
+  return `<div class="hud">${badges.join("")}</div>${corner}`;
 }
 
 export const countdownHtml = (text: string): string =>
